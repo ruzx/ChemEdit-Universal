@@ -1,0 +1,14 @@
+{
+  "width": 500,
+  "height": 400,
+  "smartPaste": true,
+  "inlineWidth": 150,
+  "inlineHeight": 150,
+  "lightTheme": "light",
+  "darkTheme": "light",
+  "inlineSmilesPrefix": "$smiles=",
+  "inlineMolPrefix": "$mol=",
+  "smartPasteSmiles": false,
+  "smartPasteMol": false,
+  "compactDrawing": false
+}

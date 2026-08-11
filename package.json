@@ -1,0 +1,23 @@
+{
+  "name": "chemistry-universal",
+  "version": "1.0.0",
+  "description": "Draw, edit, and calculate properties for chemical structures (SMILES, MOL) 100% offline. Works on Desktop and Mobile.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [],
+  "author": "Ruzal",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "esbuild": "^0.28.1",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "openchemlib": "^9.24.0"
+  }
+}
