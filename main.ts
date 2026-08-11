@@ -1,26 +1,26 @@
-import { App, Modal, Plugin, MarkdownView, Notice, Platform, PluginSettingTab, Setting, Editor, TFile } from 'obsidian';
+import { App, Modal, Plugin, MarkdownView, Notice, Platform, PluginSettingTab, Setting, Editor, TFile, requestUrl } from 'obsidian';
 import * as OCL from 'openchemlib';
 
-interface ChemMobileSettings {
+interface ChemEditUniversalSettings {
     width: number;
     height: number;
     smartPaste: boolean;
 }
 
-const DEFAULT_SETTINGS: ChemMobileSettings = {
+const DEFAULT_SETTINGS: ChemEditUniversalSettings = {
     width: 300,
     height: 300,
     smartPaste: false
 }
 
-export default class ChemMobilePlugin extends Plugin {
-    settings: ChemMobileSettings;
+export default class ChemEditUniversalPlugin extends Plugin {
+    settings: ChemEditUniversalSettings;
     
     async onload() {
-        console.log("ChemMobile loaded - OpenChemLib Chemistry Engine");
+        console.log("ChemEdit Universal loaded - OpenChemLib Engine");
         await this.loadSettings();
 
-        this.addSettingTab(new ChemMobileSettingTab(this.app, this));
+        this.addSettingTab(new ChemEditUniversalSettingTab(this.app, this));
 
         // 1. Ribbon Icon 
         this.addRibbonIcon('hexagon', 'Draw New Molecule', () => {
@@ -45,7 +45,33 @@ export default class ChemMobilePlugin extends Plugin {
             }
         });
 
-        // 3. Command: Calculate Properties 
+        // 3. Command: Fetch from PubChem
+        this.addCommand({
+            id: 'fetch-molecule-pubchem',
+            name: 'Fetch Structure by Name / CAS (Requires Internet)',
+            editorCallback: (editor: Editor) => {
+                new FetchMoleculeModal(this.app, async (query) => {
+                    try {
+                        new Notice(`Fetching ${query} from PubChem...`);
+                        
+                        const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(query)}/property/CanonicalSMILES/JSON`;
+                        const response = await requestUrl({ url: url, method: 'GET' });
+                        
+                        if (response.status === 200 && response.json) {
+                            const smiles = response.json.PropertyTable.Properties[0].CanonicalSMILES;
+                            this.insertAtCursor(editor, smiles, "smiles");
+                            new Notice("Structure successfully inserted!");
+                        } else {
+                            new Notice("Molecule not found in PubChem.");
+                        }
+                    } catch (err) {
+                        new Notice(`Failed to fetch: Could not find "${query}" or no internet connection.`);
+                    }
+                }).open();
+            }
+        });
+
+        // 4. Command: Calculate Properties 
         this.addCommand({
             id: 'calculate-properties',
             name: 'Calculate Properties (SMILES/IDCode)',
@@ -76,7 +102,6 @@ export default class ChemMobilePlugin extends Plugin {
                         
                         const formStr = (formula as any).formula || 'Unknown';
                         
-                        // FIX: OpenChemLib uses 'relativeWeight' for MW and 'absoluteWeight' for Exact Mass
                         const mwVal = (formula as any).relativeWeight || (formula as any).molecularWeight || 0;
                         const mw = Number(mwVal).toFixed(4); 
                         const emVal = (formula as any).absoluteWeight || 0;
@@ -117,7 +142,7 @@ export default class ChemMobilePlugin extends Plugin {
             }
         });
 
-        // 4. Smart Paste
+        // 5. Smart Paste
         this.registerEvent(
             this.app.workspace.on('editor-paste', (evt: ClipboardEvent, editor: Editor) => {
                 if (!this.settings.smartPaste) return;
@@ -140,7 +165,7 @@ export default class ChemMobilePlugin extends Plugin {
             })
         );
 
-        // 5. Codeblock Processors
+        // 6. Codeblock Processors
         const formats = ["smiles", "mol", "sdf", "idcode"];
         formats.forEach(fmt => {
             this.registerMarkdownCodeBlockProcessor(fmt, (source, el, ctx) => {
@@ -305,6 +330,48 @@ export default class ChemMobilePlugin extends Plugin {
 }
 
 // ------------------------------------------------------------------
+// FETCH MOLECULE MODAL (PUBCHEM)
+// ------------------------------------------------------------------
+class FetchMoleculeModal extends Modal {
+    onSubmit: (query: string) => void;
+
+    constructor(app: App, onSubmit: (query: string) => void) {
+        super(app);
+        this.onSubmit = onSubmit;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: "Fetch from PubChem" });
+        contentEl.createEl("p", { text: "Enter a Chemical Name or CAS Number (e.g. Aspirin, 50-78-2):", cls: "color-text-muted", attr: { style: "font-size: 0.9em;" } });
+
+        const input = contentEl.createEl("input", { type: "text", placeholder: "Caffeine" });
+        input.style.width = "100%";
+        input.style.marginBottom = "15px";
+
+        const btn = contentEl.createEl("button", { text: "Fetch Structure", cls: "mod-cta" });
+        btn.onclick = () => {
+            if (input.value) {
+                this.onSubmit(input.value.trim());
+                this.close();
+            }
+        };
+        input.addEventListener("keypress", (e) => {
+            if (e.key === "Enter" && input.value) {
+                this.onSubmit(input.value.trim());
+                this.close();
+            }
+        });
+
+        setTimeout(() => input.focus(), 50);
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
+}
+
+// ------------------------------------------------------------------
 // PROPERTY PROMPT MODAL
 // ------------------------------------------------------------------
 class PropertyPromptModal extends Modal {
@@ -351,10 +418,10 @@ class PropertyPromptModal extends Modal {
 // ------------------------------------------------------------------
 // SETTINGS TAB
 // ------------------------------------------------------------------
-class ChemMobileSettingTab extends PluginSettingTab {
-    plugin: ChemMobilePlugin;
+class ChemEditUniversalSettingTab extends PluginSettingTab {
+    plugin: ChemEditUniversalPlugin;
 
-    constructor(app: App, plugin: ChemMobilePlugin) {
+    constructor(app: App, plugin: ChemEditUniversalPlugin) {
         super(app, plugin);
         this.plugin = plugin;
     }
@@ -362,7 +429,7 @@ class ChemMobileSettingTab extends PluginSettingTab {
     display(): void {
         const {containerEl} = this;
         containerEl.empty();
-        containerEl.createEl('h2', {text: 'ChemMobile Settings'});
+        containerEl.createEl('h2', {text: 'ChemEdit Universal Settings'});
 
         const statusEl = containerEl.createEl('div', { cls: 'setting-item-description' });
         statusEl.innerHTML = `<span style="color:var(--text-success); font-size:1.1em">✅ <b>OpenChemLib Engine Active</b></span><br>100% offline. Calculates MW, formulas, LogP, and more natively!`;

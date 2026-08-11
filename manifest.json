@@ -1,9 +1,9 @@
 {
   "id": "chemedit-universal",
   "name": "ChemEdit Universal",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.0.0",
-  "description": "Draw, edit, and calculate properties for chemical structures (SMILES, MOL) 100% offline. Works seamlessly on Desktop and Mobile.",
+  "description": "Draw, edit, and visualize chemical structures (SMILES, MOL) offline on Desktop and Mobile.",
   "author": "Ruzal",
   "isDesktopOnly": false
 }

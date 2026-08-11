@@ -29,7 +29,7 @@ var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "acce
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => ChemMobilePlugin
+  default: () => ChemEditUniversalPlugin
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
@@ -22458,15 +22458,15 @@ var DEFAULT_SETTINGS = {
   height: 300,
   smartPaste: false
 };
-var ChemMobilePlugin = class extends import_obsidian.Plugin {
+var ChemEditUniversalPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
     __publicField(this, "settings");
   }
   async onload() {
-    console.log("ChemMobile loaded - OpenChemLib Chemistry Engine");
+    console.log("ChemEdit Universal loaded - OpenChemLib Engine");
     await this.loadSettings();
-    this.addSettingTab(new ChemMobileSettingTab(this.app, this));
+    this.addSettingTab(new ChemEditUniversalSettingTab(this.app, this));
     this.addRibbonIcon("hexagon", "Draw New Molecule", () => {
       var _a;
       const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
@@ -22484,6 +22484,28 @@ var ChemMobilePlugin = class extends import_obsidian.Plugin {
       editorCallback: (editor) => {
         new OCLEditorModal(this.app, "", "smiles", (newData) => {
           this.insertAtCursor(editor, newData, "smiles");
+        }).open();
+      }
+    });
+    this.addCommand({
+      id: "fetch-molecule-pubchem",
+      name: "Fetch Structure by Name / CAS (Requires Internet)",
+      editorCallback: (editor) => {
+        new FetchMoleculeModal(this.app, async (query) => {
+          try {
+            new import_obsidian.Notice(`Fetching ${query} from PubChem...`);
+            const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(query)}/property/CanonicalSMILES/JSON`;
+            const response = await (0, import_obsidian.requestUrl)({ url, method: "GET" });
+            if (response.status === 200 && response.json) {
+              const smiles = response.json.PropertyTable.Properties[0].CanonicalSMILES;
+              this.insertAtCursor(editor, smiles, "smiles");
+              new import_obsidian.Notice("Structure successfully inserted!");
+            } else {
+              new import_obsidian.Notice("Molecule not found in PubChem.");
+            }
+          } catch (err) {
+            new import_obsidian.Notice(`Failed to fetch: Could not find "${query}" or no internet connection.`);
+          }
         }).open();
       }
     });
@@ -22725,6 +22747,38 @@ ${newData}
     await this.saveData(this.settings);
   }
 };
+var FetchMoleculeModal = class extends import_obsidian.Modal {
+  constructor(app, onSubmit) {
+    super(app);
+    __publicField(this, "onSubmit");
+    this.onSubmit = onSubmit;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: "Fetch from PubChem" });
+    contentEl.createEl("p", { text: "Enter a Chemical Name or CAS Number (e.g. Aspirin, 50-78-2):", cls: "color-text-muted", attr: { style: "font-size: 0.9em;" } });
+    const input = contentEl.createEl("input", { type: "text", placeholder: "Caffeine" });
+    input.style.width = "100%";
+    input.style.marginBottom = "15px";
+    const btn = contentEl.createEl("button", { text: "Fetch Structure", cls: "mod-cta" });
+    btn.onclick = () => {
+      if (input.value) {
+        this.onSubmit(input.value.trim());
+        this.close();
+      }
+    };
+    input.addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && input.value) {
+        this.onSubmit(input.value.trim());
+        this.close();
+      }
+    });
+    setTimeout(() => input.focus(), 50);
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var PropertyPromptModal = class extends import_obsidian.Modal {
   constructor(app, initialValue, onSubmit) {
     super(app);
@@ -22759,7 +22813,7 @@ var PropertyPromptModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
-var ChemMobileSettingTab = class extends import_obsidian.PluginSettingTab {
+var ChemEditUniversalSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     __publicField(this, "plugin");
@@ -22768,7 +22822,7 @@ var ChemMobileSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "ChemMobile Settings" });
+    containerEl.createEl("h2", { text: "ChemEdit Universal Settings" });
     const statusEl = containerEl.createEl("div", { cls: "setting-item-description" });
     statusEl.innerHTML = `<span style="color:var(--text-success); font-size:1.1em">\u2705 <b>OpenChemLib Engine Active</b></span><br>100% offline. Calculates MW, formulas, LogP, and more natively!`;
     containerEl.createEl("br");
