@@ -1,4 +1,4 @@
-# Chemistry Universal for Obsidian
+# ChemEdit Universal for Obsidian
 
 Chemistry Universal is a lightweight, cross-platform chemistry engine for Obsidian. Powered by [OpenChemLib](https://github.com/Actelion/openchemlib), it allows you to draw, edit, and visualize chemical structures directly in your notes.
 
