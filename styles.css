@@ -1,0 +1,21 @@
+/* ChemEdit Universal - Dark Mode Support */
+
+/* 1. Force the Editor to have a white canvas so black lines are always visible */
+.chem-editor-container {
+    background-color: #ffffff;
+    border-radius: 4px;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+}
+
+/* 2. Smart Inversion for Rendered Structures in Dark Mode */
+.chem-svg-wrapper svg {
+    background-color: transparent !important;
+}
+
+.theme-dark .chem-svg-wrapper svg {
+    /* 
+       This perfectly inverts black lines to white, 
+       but rotates the colors back so Oxygen stays Red and Nitrogen stays Blue! 
+    */
+    filter: invert(0.88) hue-rotate(180deg) brightness(1.2) contrast(1.2);
+}
