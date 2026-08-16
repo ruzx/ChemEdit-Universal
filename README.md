@@ -7,7 +7,7 @@ Because it does not rely on web iframes, React, or Wasm, it is fast and **works 
 
 ChemEdit universal mobile demo:
 
-<video src="https://github.com/user-attachments/assets/e810be8b-b324-4d93-9a61-4728afdf9706" controls width="800"></video>
+<img width="800" height="686" alt="Image" src="https://github.com/user-attachments/assets/d1f9437a-4007-4e29-8bed-20fefd77baf6" />
 
 
 ## ✨ Features
@@ -18,6 +18,8 @@ ChemEdit universal mobile demo:
 - **📋 Smart Paste:** Paste raw SMILES or MOL strings into Obsidian, and the plugin can automatically wrap them in code blocks for instant rendering.
 
 ## 🚀 How to Use
+
+<video src="https://github.com/user-attachments/assets/e810be8b-b324-4d93-9a61-4728afdf9706" controls width="800"></video>
 
 ### 1. Drawing a New Molecule
 Click the **Hexagon Icon** in your left ribbon menu (or use the Command Palette: `Draw new molecule (SMILES)`). A touch-friendly editor will open. Draw your molecule, click Save, and it will be inserted into your note.
