@@ -1,22 +1,34 @@
-import { App, Modal, Plugin, MarkdownView, Notice, Platform, PluginSettingTab, Setting, Editor, TFile } from 'obsidian';
+import { App, Modal, Plugin, MarkdownView, Notice, Platform, PluginSettingTab, Setting, Editor, TFile, requestUrl } from 'obsidian';
 import * as OCL from 'openchemlib';
+import { SharedElnRenderer } from './SharedEln';
+import { takeStandardPhoto, saveMediaFile, TlcModal } from './SharedMedia';
 
 interface ChemEditUniversalSettings {
     width: number;
     height: number;
     smartPaste: boolean;
+    mediaSavePath: string;
 }
 
 const DEFAULT_SETTINGS: ChemEditUniversalSettings = {
     width: 300,
     height: 300,
-    smartPaste: false
+    smartPaste: false,
+    mediaSavePath: "Assets/"
 }
 
 export default class ChemEditUniversalPlugin extends Plugin {
     settings: ChemEditUniversalSettings;
 
-    // --- EXPOSE API FOR OTHER PLUGINS ---
+    // Helper to fix OpenChemLib's hardcoded black SVGs for Dark Mode
+    fixSvgDarkMode(svg: string): string {
+        return svg
+            .replace(/="#000000"/gi, '="currentColor"')
+            .replace(/="#000"/gi, '="currentColor"')
+            .replace(/rgb\(0,\s*0,\s*0\)/gi, 'currentColor')
+            .replace(/stroke="none"/gi, 'stroke="transparent"');
+    }
+
     public api = {
         openEditor: (initialData: string, format: string, onSave: (data: string) => void) => {
             new OCLEditorModal(this.app, initialData, format, onSave).open();
@@ -31,7 +43,8 @@ export default class ChemEditUniversalPlugin extends Plugin {
                 }
                 const wrapper = document.createElement("div");
                 wrapper.className = "chem-svg-wrapper";
-                wrapper.innerHTML = mol.toSVG(width, height);
+                wrapper.style.color = "var(--text-normal)"; // Inherit theme text color
+                wrapper.innerHTML = this.fixSvgDarkMode(mol.toSVG(width, height));
                 return wrapper;
             } catch {
                 return null;
@@ -42,10 +55,8 @@ export default class ChemEditUniversalPlugin extends Plugin {
     async onload() {
         console.log("ChemEdit Universal loaded - OpenChemLib Engine");
         await this.loadSettings();
-
         this.addSettingTab(new ChemEditUniversalSettingTab(this.app, this));
 
-        // 1. Ribbon Icon 
         this.addRibbonIcon('hexagon', 'Draw New Molecule', () => {
             const editor = this.app.workspace.activeEditor?.editor;
             if (!editor) {
@@ -57,7 +68,26 @@ export default class ChemEditUniversalPlugin extends Plugin {
             }).open();
         });
 
-        // 2. Command: Draw Molecule
+        this.addRibbonIcon('camera', 'Take Lab Photo', () => {
+            const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+            if (!view) { new Notice("Place cursor in a Markdown file first."); return; }
+            takeStandardPhoto(async (buffer, ext) => {
+                const link = await saveMediaFile(this.app, buffer, this.settings.mediaSavePath, `Photo_${window.moment().format("YYYYMMDD_HHmmss")}.${ext}`);
+                view.editor.replaceSelection(`\n![[${link}]]\n`);
+            });
+        });
+
+        this.addRibbonIcon('image-file', 'Add TLC Plate', () => {
+            const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+            if (!view) { new Notice("Place cursor in a Markdown file first."); return; }
+            new TlcModal(this.app, async (pngData, rfData) => {
+                const link = await saveMediaFile(this.app, pngData, this.settings.mediaSavePath, `TLC_${window.moment().format("YYYYMMDD_HHmmss")}.png`);
+                let md = `\n![[${link}]]\n\n| Spot | $R_f$ |\n|---|---|\n`;
+                rfData.forEach((s, i) => md += `| ${i+1} | **${s.rf.toFixed(2)}** |\n`);
+                view.editor.replaceSelection(md);
+            }).open();
+        });
+
         this.addCommand({
             id: 'insert-smiles-molecule',
             name: 'Draw new molecule (SMILES)',
@@ -68,7 +98,6 @@ export default class ChemEditUniversalPlugin extends Plugin {
             }
         });
 
-        // 3. Command: Calculate Properties 
         this.addCommand({
             id: 'calculate-properties',
             name: 'Calculate Properties (SMILES/IDCode)',
@@ -98,7 +127,6 @@ export default class ChemEditUniversalPlugin extends Plugin {
                         const props = new OCL.MoleculeProperties(mol);
                         
                         const formStr = (formula as any).formula || 'Unknown';
-                        
                         const mwVal = (formula as any).relativeWeight || (formula as any).molecularWeight || 0;
                         const mw = Number(mwVal).toFixed(4); 
                         const emVal = (formula as any).absoluteWeight || 0;
@@ -138,7 +166,6 @@ export default class ChemEditUniversalPlugin extends Plugin {
             }
         });
 
-        // 4. Smart Paste
         this.registerEvent(
             this.app.workspace.on('editor-paste', (evt: ClipboardEvent, editor: Editor) => {
                 if (!this.settings.smartPaste) return;
@@ -161,7 +188,6 @@ export default class ChemEditUniversalPlugin extends Plugin {
             })
         );
 
-        // 5. Codeblock Processors
         const formats = ["smiles", "mol", "sdf", "idcode"];
         formats.forEach(fmt => {
             this.registerMarkdownCodeBlockProcessor(fmt, (source, el, ctx) => {
@@ -173,9 +199,51 @@ export default class ChemEditUniversalPlugin extends Plugin {
             this.renderChemicalProperties(source, el);
         });
 
-        // 6. Electronic Lab Notebook (ELN) Processor
+        // 5. Modular ELN Processor with Dark Mode Fix applied to the SVGs
         this.registerMarkdownCodeBlockProcessor("eln", async (source, el, ctx) => {
-            this.renderElnBlock(source, el, ctx);
+            const elnRenderer = new SharedElnRenderer(this.app, this.settings.mediaSavePath);
+            const wrapper = await elnRenderer.renderElnBlock(source, el, ctx);
+            
+            // Loop over the placeholders and draw the SVGs with OpenChemLib
+            wrapper.querySelectorAll('.eln-structure').forEach((node: HTMLElement) => {
+                const smiles = node.getAttribute('data-smiles');
+                const w = node.classList.contains('scheme-size') ? 110 : 90;
+                
+                if (smiles) {
+                    try {
+                        const mol = OCL.Molecule.fromSmiles(smiles);
+                        node.style.color = "var(--text-normal)"; // Ensure it inherits the text color
+                        node.innerHTML = this.fixSvgDarkMode(mol.toSVG(w, w));
+                    } catch (e) {
+                        node.innerHTML = `<span style="color:var(--text-error); padding:10px;">Invalid</span>`;
+                    }
+                }
+                
+                // Attach double click to open the OCL editor
+                node.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    const type = node.getAttribute('data-type');
+                    const index = parseInt(node.getAttribute('data-index') || '0', 10);
+                    
+                    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                    const info = ctx.getSectionInfo(el);
+                    
+                    new OCLEditorModal(this.app, smiles || "", "smiles", (newData) => {
+                        if (info && view) {
+                            const { parseYaml, stringifyYaml } = require('obsidian');
+                            const blockText = view.editor.getRange({line: info.lineStart + 1, ch: 0}, {line: info.lineEnd, ch: 0});
+                            try {
+                                const yamlObj = parseYaml(blockText);
+                                yamlObj[type!][index].smiles = newData;
+                                const newYaml = stringifyYaml(yamlObj);
+                                view.editor.replaceRange(newYaml, {line: info.lineStart + 1, ch: 0}, {line: info.lineEnd, ch: 0});
+                            } catch (err) {
+                                new Notice("Failed to parse YAML block.");
+                            }
+                        }
+                    }).open();
+                });
+            });
         });
     }
 
@@ -187,7 +255,7 @@ export default class ChemEditUniversalPlugin extends Plugin {
     async renderChemicalToElement(source: string, format: string, el: HTMLElement, ctx: any) {
         const cleanSource = source.trim();
         const wrapper = document.createElement("div");
-        wrapper.className = "chem-svg-wrapper"; // Apply dark mode filters
+        wrapper.className = "chem-svg-wrapper";
         wrapper.style.cursor = "pointer";
         wrapper.style.textAlign = "center";
         wrapper.style.padding = "10px";
@@ -195,6 +263,7 @@ export default class ChemEditUniversalPlugin extends Plugin {
         wrapper.style.backgroundColor = "var(--background-primary)";
         wrapper.style.border = "1px solid var(--background-modifier-border)";
         wrapper.style.borderRadius = "8px";
+        wrapper.style.color = "var(--text-normal)"; // Inherit theme text color
         el.appendChild(wrapper);
 
         let actualData = cleanSource;
@@ -229,8 +298,7 @@ export default class ChemEditUniversalPlugin extends Plugin {
                 else if (format === "idcode") molecule = OCL.Molecule.fromIDCode(actualData);
                 else molecule = OCL.Molecule.fromMolfile(actualData);
 
-                const svgString = molecule.toSVG(this.settings.width, this.settings.height);
-                wrapper.innerHTML = svgString;
+                wrapper.innerHTML = this.fixSvgDarkMode(molecule.toSVG(this.settings.width, this.settings.height));
             } catch (err: any) {
                 wrapper.innerHTML = `<span style="color: var(--text-error);">Rendering Error: ${err.message}</span>`;
             }
@@ -274,22 +342,18 @@ export default class ChemEditUniversalPlugin extends Plugin {
 
         try {
             let mol;
-            try {
-                mol = OCL.Molecule.fromSmiles(cleanSource);
-            } catch {
-                mol = OCL.Molecule.fromIDCode(cleanSource);
-            }
+            try { mol = OCL.Molecule.fromSmiles(cleanSource); } catch { mol = OCL.Molecule.fromIDCode(cleanSource); }
             
             const svgEl = wrapper.createDiv();
-            svgEl.className = "chem-svg-wrapper"; // Apply dark mode filters
+            svgEl.className = "chem-svg-wrapper"; 
             svgEl.style.flexShrink = "0";
-            svgEl.innerHTML = mol.toSVG(120, 120);
+            svgEl.style.color = "var(--text-normal)"; // Inherit theme text color
+            svgEl.innerHTML = this.fixSvgDarkMode(mol.toSVG(120, 120));
 
             const formula = mol.getMolecularFormula();
             const props = new OCL.MoleculeProperties(mol);
 
             const formStr = (formula as any).formula || 'Unknown';
-            
             const mwVal = (formula as any).relativeWeight || (formula as any).molecularWeight || 0;
             const mw = Number(mwVal).toFixed(4); 
             const emVal = (formula as any).absoluteWeight || 0;
@@ -319,219 +383,6 @@ export default class ChemEditUniversalPlugin extends Plugin {
             `;
         } catch (e: any) {
             wrapper.innerHTML = `<span style="color: var(--text-error);">Error: Could not parse string for properties. (${e.message})</span>`;
-        }
-    }
-
-    async renderElnBlock(source: string, el: HTMLElement, ctx: any) {
-        const { parseYaml } = require('obsidian'); 
-        
-        const wrapper = el.createDiv();
-        wrapper.style.border = "1px solid var(--background-modifier-border)";
-        wrapper.style.padding = "25px";
-        wrapper.style.borderRadius = "12px";
-        wrapper.style.backgroundColor = "var(--background-primary)";
-        wrapper.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.05)";
-        wrapper.style.fontFamily = "var(--font-interface)";
-
-        try {
-            const data = parseYaml(source);
-            if (!data.reactants || !data.products) throw new Error("ELN block must contain 'reactants' and 'products'.");
-
-            const processChemOffline = (item: any) => {
-                if (item.smiles) {
-                    try {
-                        const mol = OCL.Molecule.fromSmiles(item.smiles);
-                        const formula = mol.getMolecularFormula();
-                        if (!item.mw) item.mw = (formula as any).relativeWeight || (formula as any).molecularWeight || 0;
-                        if (!item.formula) item.formula = (formula as any).formula;
-                        
-                        item._svgScheme = mol.toSVG(110, 110);
-                        item._svgTable = mol.toSVG(90, 90);
-                    } catch (e) {
-                        item._svgScheme = `<div style="color:var(--text-error); padding:10px;">Invalid SMILES</div>`;
-                        item._svgTable = item._svgScheme;
-                    }
-                }
-            };
-
-            data.reactants.forEach(processChemOffline);
-            data.products.forEach(processChemOffline);
-
-            let refMmol = data.reference_amount || 0;
-            if (refMmol === 0) {
-                const baseR = data.reactants.find((r: any) => r.eq === 1 && r.mass);
-                if (baseR && baseR.mw) refMmol = baseR.mass / baseR.mw;
-            }
-
-            data.reactants.forEach((r: any) => {
-                r.eq = r.eq || 1;
-                r.mmol = r.mmol || (refMmol * r.eq);
-                if (!r.mass && r.mw) r.mass = r.mmol * r.mw;
-                if (r.mass && r.density) r.volume = (r.mass / 1000) / r.density;
-            });
-
-            data.products.forEach((p: any) => {
-                p.eq = p.eq || 1;
-                p.theory_mmol = refMmol * p.eq;
-                p.theory_mass = p.theory_mmol * p.mw;
-                if (p.mass_isolated) {
-                    p.yield = ((p.mass_isolated / p.theory_mass) * 100).toFixed(1);
-                    p.mmol_isolated = p.mass_isolated / p.mw;
-                }
-            });
-
-            const thColor = "var(--background-secondary-alt)"; 
-            const bdColor = "var(--background-modifier-border-hover)";
-            const textColor = "var(--text-normal)";
-
-            let html = `<div style="font-size: 14px; color: ${textColor};">`;
-
-            html += `
-            <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid var(--background-modifier-border); padding-bottom: 10px; margin-bottom: 20px;">
-                <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: var(--text-normal);">${data.code || data.id || 'Reaction Scheme'}</h2>
-                <div style="font-size: 12px; color: var(--text-muted);">
-                    ${data.date ? `<b>Created:</b> ${data.date} &nbsp;|&nbsp; ` : ''}
-                    ${data.author ? `<b>Author:</b> ${data.author}` : ''}
-                </div>
-            </div>`;
-
-            html += `<div style="display: flex; align-items: center; justify-content: center; flex-wrap: wrap; padding: 15px; margin-bottom: 20px; background: var(--background-secondary); border-radius: 8px; border: 1px solid var(--background-modifier-border);">`;
-            
-            data.reactants.forEach((r: any, i: number) => {
-                if(i > 0) html += `<div style="font-size: 20px; font-weight: bold; color: var(--text-muted); margin: 0 10px;">+</div>`;
-                html += `<div style="display: flex; flex-direction: column; align-items: center; margin: 0 5px;">
-                    <div class="eln-structure chem-svg-wrapper" data-type="reactants" data-index="${i}" data-smiles="${r.smiles || ''}" style="cursor: pointer;" title="Double-click to edit">${r._svgScheme || 'No Structure'}</div>
-                    <div style="color: var(--text-muted); font-size: 11px; margin-top: 4px;">${r.eq || 1} eq</div>
-                </div>`;
-            });
-
-            html += `<div style="display: flex; flex-direction: column; align-items: center; margin: 0 20px;">
-                <div style="font-size: 11px; color: var(--text-muted); text-align: center; font-weight: 500;">${data.temperature || ''}</div>
-                <div style="font-size: 11px; color: var(--text-muted); text-align: center; font-weight: 500;">${data.duration || ''}</div>
-                <div style="font-size: 28px; font-weight: bold; line-height: 0.8; color: var(--text-normal); margin: 4px 0;">⟶</div>
-                <div style="font-size: 11px; color: var(--text-muted); text-align: center; font-weight: 500;">${data.solvent || ''}</div>
-            </div>`;
-
-            data.products.forEach((p: any, i: number) => {
-                if(i > 0) html += `<div style="font-size: 20px; font-weight: bold; color: var(--text-muted); margin: 0 10px;">+</div>`;
-                html += `<div style="display: flex; flex-direction: column; align-items: center; margin: 0 5px;">
-                    <div class="eln-structure chem-svg-wrapper" data-type="products" data-index="${i}" data-smiles="${p.smiles || ''}" style="cursor: pointer;" title="Double-click to edit">${p._svgScheme || 'No Structure'}</div>
-                    <div style="color: var(--text-muted); font-size: 11px; margin-top: 4px;">${p.eq || 1} eq</div>
-                </div>`;
-            });
-            
-            html += `</div>`;
-
-            html += `
-            <div style="display: flex; justify-content: flex-start; gap: 30px; background: var(--background-secondary-alt); padding: 10px 15px; border-radius: 6px; margin-bottom: 25px; font-size: 13px;">
-                <div><b style="color:var(--text-muted);">Duration:</b> ${data.duration || '-'}</div>
-                <div><b style="color:var(--text-muted);">Solvent:</b> ${data.solvent || '-'}</div>
-                <div><b style="color:var(--text-muted);">Temperature:</b> ${data.temperature || '-'}</div>
-                ${data.atmosphere ? `<div><b style="color:var(--text-muted);">Atmosphere:</b> ${data.atmosphere}</div>` : ''}
-            </div>`;
-            
-            html += `
-                <h4 style="margin-bottom: 10px; margin-top: 0; color: var(--text-normal);">Reactants</h4>
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; text-align: left; font-size: 13px;">
-                    <tr style="background-color: ${thColor}; border-bottom: 2px solid var(--background-modifier-border);">
-                        <th style="padding: 10px;">eq</th>
-                        <th style="padding: 10px;">Structure</th>
-                        <th style="padding: 10px;">Name</th>
-                        <th style="padding: 10px;">Formula</th>
-                        <th style="padding: 10px;">MW</th>
-                        <th style="padding: 10px;">n [mmol]</th>
-                        <th style="padding: 10px;">m [mg]</th>
-                        <th style="padding: 10px;">V [ml]</th>
-                    </tr>`;
-            
-            data.reactants.forEach((r: any, i: number) => {
-                html += `<tr style="border-bottom: 1px solid ${bdColor};">
-                    <td style="padding: 10px; font-weight:500;">${r.eq || '-'}</td>
-                    <td style="padding: 10px;"><div class="eln-structure chem-svg-wrapper" data-type="reactants" data-index="${i}" data-smiles="${r.smiles || ''}" style="cursor: pointer;" title="Double-click to edit">${r._svgTable || '-'}</div></td>
-                    <td style="padding: 10px;"><b>${r.name || '-'}</b></td>
-                    <td style="padding: 10px; color:var(--text-muted);">${r.formula || '-'}</td>
-                    <td style="padding: 10px; color:var(--text-muted);">${r.mw ? Number(r.mw).toFixed(2) : '-'}</td>
-                    <td style="padding: 10px;">${r.mmol ? Number(r.mmol).toFixed(2) : '-'}</td>
-                    <td style="padding: 10px;">${r.mass ? Number(r.mass).toFixed(1) : '-'}</td>
-                    <td style="padding: 10px;">${r.volume ? Number(r.volume).toFixed(3) : '-'}</td>
-                </tr>`;
-            });
-
-            html += `</table><h4 style="margin-bottom: 10px; color: var(--text-normal);">Products</h4>
-                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; margin-bottom: 20px;">
-                    <tr style="background-color: ${thColor}; border-bottom: 2px solid var(--background-modifier-border);">
-                        <th style="padding: 10px;">eq</th>
-                        <th style="padding: 10px;">Structure</th>
-                        <th style="padding: 10px;">Name</th>
-                        <th style="padding: 10px;">MW</th>
-                        <th style="padding: 10px;">n [mmol]</th>
-                        <th style="padding: 10px;">m [mg]</th>
-                        <th style="padding: 10px;">Yield [%]</th>
-                    </tr>`;
-
-            data.products.forEach((p: any, i: number) => {
-                html += `<tr style="border-bottom: 1px solid ${bdColor};">
-                    <td style="padding: 10px; font-weight:500;">${p.eq || '-'}</td>
-                    <td style="padding: 10px;"><div class="eln-structure chem-svg-wrapper" data-type="products" data-index="${i}" data-smiles="${p.smiles || ''}" style="cursor: pointer;" title="Double-click to edit">${p._svgTable || '-'}</div></td>
-                    <td style="padding: 10px;"><b>${p.name || '-'}</b></td>
-                    <td style="padding: 10px; color:var(--text-muted);">${p.mw ? Number(p.mw).toFixed(2) : '-'}</td>
-                    <td style="padding: 10px;">${p.mmol_isolated ? Number(p.mmol_isolated).toFixed(2) : (p.theory_mmol ? Number(p.theory_mmol).toFixed(2) : '-')}</td>
-                    <td style="padding: 10px;">${p.mass_isolated ? Number(p.mass_isolated).toFixed(1) : '-'}</td>
-                    <td style="padding: 10px; font-size: 14px; color: var(--text-success);"><b>${p.yield ? p.yield + '%' : '-'}</b></td>
-                </tr>`;
-            });
-
-            html += `</table>`;
-
-            if (data.procedure || data.notes) {
-                html += `
-                <div style="margin-top: 20px; padding: 15px; background: var(--background-secondary); border-radius: 8px; border-left: 4px solid var(--interactive-accent);">
-                    <b style="color: var(--text-normal); display: block; margin-bottom: 5px;">Procedure / Notes:</b>
-                    <div style="color: var(--text-muted); white-space: pre-wrap; font-size: 13px;">${data.procedure || data.notes}</div>
-                </div>`;
-            }
-
-            html += `</div>`;
-            wrapper.innerHTML = html;
-
-            const structureEls = wrapper.querySelectorAll('.eln-structure');
-            structureEls.forEach((elNode) => {
-                elNode.addEventListener('dblclick', (e) => {
-                    e.stopPropagation();
-                    const target = e.currentTarget as HTMLElement;
-                    const type = target.getAttribute('data-type');
-                    const index = parseInt(target.getAttribute('data-index') || '0', 10);
-                    const currentSmiles = target.getAttribute('data-smiles') || '';
-                    
-                    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-                    if (!view) return;
-                    const info = ctx.getSectionInfo(el);
-
-                    new OCLEditorModal(this.app, currentSmiles, "smiles", (newData) => {
-                        const editor = view.editor;
-                        if (info) {
-                            const { parseYaml, stringifyYaml } = require('obsidian');
-                            const blockText = editor.getRange({line: info.lineStart + 1, ch: 0}, {line: info.lineEnd, ch: 0});
-                            try {
-                                const yamlObj = parseYaml(blockText);
-                                if (yamlObj[type!] && yamlObj[type!][index]) {
-                                    yamlObj[type!][index].smiles = newData;
-                                    delete yamlObj[type!][index].mw;
-                                    delete yamlObj[type!][index].formula;
-                                    
-                                    const newYaml = stringifyYaml(yamlObj);
-                                    editor.replaceRange(newYaml, {line: info.lineStart + 1, ch: 0}, {line: info.lineEnd, ch: 0});
-                                }
-                            } catch (err) {
-                                new Notice("Error updating ELN YAML block.");
-                            }
-                        }
-                    }).open();
-                });
-            });
-
-        } catch (err: any) {
-            wrapper.innerHTML = `<div style="padding: 20px; color: var(--text-error); background: var(--background-secondary); border-radius: 8px;"><b>ELN Formatting Error:</b><br>${err.message}</div>`;
         }
     }
 
@@ -624,6 +475,11 @@ class ChemEditUniversalSettingTab extends PluginSettingTab {
                     this.plugin.settings.smartPaste = value;
                     await this.plugin.saveSettings();
                 }));
+
+        new Setting(containerEl)
+            .setName('Media Images Save Path')
+            .setDesc('Folder where camera/TLC pictures will be stored (e.g. Assets/)')
+            .addText(text => text.setPlaceholder('Assets/').setValue(this.plugin.settings.mediaSavePath).onChange(async (v) => { this.plugin.settings.mediaSavePath = v; await this.plugin.saveSettings(); }));
     }
 }
 
@@ -664,7 +520,7 @@ class OCLEditorModal extends Modal {
         contentEl.style.flexDirection = "column";
 
         const editorContainer = contentEl.createDiv();
-        editorContainer.className = "chem-editor-container"; // Apply white background
+        editorContainer.className = "chem-editor-container";
         editorContainer.style.flex = "1 1 auto";
         editorContainer.style.width = "100%";
         editorContainer.style.height = "100%";

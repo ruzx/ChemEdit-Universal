@@ -9,6 +9,12 @@ ChemEdit universal mobile demo:
 
 <video src="https://github.com/user-attachments/assets/e810be8b-b324-4d93-9a61-4728afdf9706" controls width="800"></video>
 
+### 🚀 What's New in ChemEdit Universal
+*   **Interactive ELN Editor:** Added a floating action bar to ELN blocks. You can now visually edit Reactants, Products, Equivalents, and Procedures via a clean UI without touching Markdown YAML!
+*   **🧪 Auto-Name Structures:** Added a smart "Auto-Name" button inside the ELN editor that automatically fetches IUPAC/Common names for your drawn structures via PubChem/CACTUS.
+*   **📸 Fume Hood Utilities (Media Ribbon):** Take Lab Photos or upload TLC plates directly into your notes. 
+***
+
 
 ## ✨ Features
 
