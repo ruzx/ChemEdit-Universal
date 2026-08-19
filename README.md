@@ -7,7 +7,7 @@ Because it does not rely on web iframes, React, or Wasm, it is fast and **works 
 
 ChemEdit universal mobile demo:
 
-<img width="800" height="686" alt="Image" src="https://github.com/user-attachments/assets/d1f9437a-4007-4e29-8bed-20fefd77baf6" />
+<video src="https://github.com/user-attachments/assets/e810be8b-b324-4d93-9a61-4728afdf9706" controls width="800"></video>
 
 ### 🚀 What's New in ChemEdit Universal
 *   **Interactive ELN Editor:** Added a floating action bar to ELN blocks. You can now visually edit Reactants, Products, Equivalents, and Procedures via a clean UI without touching Markdown YAML!
@@ -25,7 +25,6 @@ ChemEdit universal mobile demo:
 
 ## 🚀 How to Use
 
-<video src="https://github.com/user-attachments/assets/e810be8b-b324-4d93-9a61-4728afdf9706" controls width="800"></video>
 
 ### 1. Drawing a New Molecule
 Click the **Hexagon Icon** in your left ribbon menu (or use the Command Palette: `Draw new molecule (SMILES)`). A touch-friendly editor will open. Draw your molecule, click Save, and it will be inserted into your note.
