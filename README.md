@@ -8,8 +8,18 @@ ChemEdit universal mobile demo:
 
 <video src="https://github.com/user-attachments/assets/e810be8b-b324-4d93-9a61-4728afdf9706" controls width="800"></video>
 
-### 🚀 What's New in ChemEdit Universal
+### 🚀 What's New in ChemEdit Universal 1.0.6
 
+* **Compound Library** — Search, insert, and save compounds from built-in or custom Markdown libraries.
+* **Chemistry Context Menu** — Right-click structures to copy SMILES/MOL, retrieve chemical properties, and open PubChem, ChemSpider, MolPort, or NMRium.
+* **Advanced ELN** — Improved responsive tables, intelligent stoichiometry, experiment cloning, macros, automatic experiment numbering, and Excel export.
+* **Grid & Gallery Views** — Render multiple SMILES as grids and browse reactions or molecules from folders as visual galleries.
+* **Mobile & Desktop** — Universal adds offline structure rendering/calculation with OpenChemLib, plus selectable SmilesDrawer/OpenChemLib rendering engines.
+* **Stability & UX** — Improved integration, mobile ELN rendering, and overall performance.
+* **Offline chemistry tools** — Structure rendering, properties, and MOL generation work without an internet connection.
+* **Two rendering engines** — Choose between SmilesDrawer and OpenChemLib.
+
+1.0.5
 * **Interactive ELN Editor:** Added a floating action bar to ELN blocks. You can now visually edit Reactants, Products, Equivalents, and Procedures via a clean UI without touching Markdown YAML!
 * **🧪 Auto-Name Structures:** Added a smart "Auto-Name" button inside the ELN editor that automatically fetches IUPAC/Common names for your drawn structures via PubChem/CACTUS.
 * **📸 Fume Hood Utilities (Media Ribbon):** Take Lab Photos or upload TLC plates directly into your notes. 
