@@ -27227,22 +27227,22 @@ var TlcModal = class extends import_obsidian.Modal {
       this.modalEl.style.width = "100vw";
       this.modalEl.style.height = "100vh";
     }
-    contentEl.createEl("h3", { text: "Digital TLC Calculator", attr: { style: "margin-top: 0;" } });
-    const controls = contentEl.createDiv({ attr: { style: "margin-bottom: 10px; display: flex; gap: 10px; align-items:center;" } });
+    contentEl.createEl("h3", { text: "Digital TLC Calculator", attr: { style: "margin-top: 0; margin-bottom: 10px;" } });
+    const controls = contentEl.createDiv({ attr: { style: "margin-bottom: 15px; display: flex; gap: 8px; align-items:center;" } });
     const fileInput = controls.createEl("input", { type: "file", attr: { accept: "image/*", capture: "environment", style: "display:none;" } });
-    const uploadBtn = controls.createEl("button", { text: "\u{1F4F7} Upload Photo", cls: "mod-cta" });
+    const uploadBtn = controls.createEl("button", { text: "\u{1F4F7} Upload", cls: "mod-cta", attr: { style: "padding: 4px 12px;" } });
     uploadBtn.onclick = () => fileInput.click();
-    const clearBtn = controls.createEl("button", { text: "Clear Spots" });
+    const clearBtn = controls.createEl("button", { text: "Clear", attr: { style: "padding: 4px 12px;" } });
     clearBtn.onclick = () => {
       this.spots = [];
       this.draw();
     };
-    const saveBtn = controls.createEl("button", { text: "Save & Insert", cls: "mod-cta", attr: { style: "margin-left:auto;" } });
+    const saveBtn = controls.createEl("button", { text: "Save", cls: "mod-cta", attr: { style: "margin-left:auto; padding: 4px 16px;" } });
     saveBtn.style.display = "none";
     saveBtn.onclick = () => this.exportAndSave();
-    const instructions = contentEl.createDiv({ cls: "color-text-muted", attr: { style: "font-size:12px; margin-bottom:10px;" } });
+    const instructions = contentEl.createDiv({ cls: "color-text-muted", attr: { style: "font-size:12px; margin-bottom:10px; line-height: 1.3;" } });
     instructions.innerHTML = "Upload an image. Drag the <b style='color:#4488ff'>Baseline</b> and <b style='color:#ff4444'>Solvent Front</b>. Click anywhere to add a spot.";
-    const canvasWrapper = contentEl.createDiv({ attr: { style: "width:100%; height:60vh; overflow:hidden; position:relative; background:#1e1e1e; border-radius:8px;" } });
+    const canvasWrapper = contentEl.createDiv({ attr: { style: "width:100%; height:65vh; overflow:hidden; position:relative; background:#1e1e1e; border-radius:8px;" } });
     this.canvas = canvasWrapper.createEl("canvas");
     this.canvas.style.width = "100%";
     this.canvas.style.height = "100%";
@@ -27257,10 +27257,18 @@ var TlcModal = class extends import_obsidian.Modal {
         var _a;
         this.img = new Image();
         this.img.onload = () => {
-          this.canvas.width = this.img.width;
-          this.canvas.height = this.img.height;
-          this.baselineY = this.img.height * 0.85;
-          this.frontY = this.img.height * 0.15;
+          let w = this.img.width;
+          let h = this.img.height;
+          const MAX_DIM = 1600;
+          if (w > MAX_DIM || h > MAX_DIM) {
+            const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
+            w = w * ratio;
+            h = h * ratio;
+          }
+          this.canvas.width = w;
+          this.canvas.height = h;
+          this.baselineY = this.canvas.height * 0.85;
+          this.frontY = this.canvas.height * 0.15;
           this.spots = [];
           saveBtn.style.display = "block";
           this.draw();
@@ -27279,22 +27287,22 @@ var TlcModal = class extends import_obsidian.Modal {
       const y = (e.clientY - rect.top - (rect.height - this.canvas.height * scale) / 2) / scale;
       return { x: x16, y };
     };
-    const HIT_RADIUS = 40;
     this.canvas.addEventListener("pointerdown", (e) => {
       if (!this.img) return;
       e.preventDefault();
       const { x: x16, y } = getCoords(e);
+      const hitRadius = Math.max(50, this.canvas.width / 15);
       for (let i = 0; i < this.spots.length; i++) {
-        if (Math.hypot(this.spots[i].x - x16, this.spots[i].y - y) < HIT_RADIUS) {
+        if (Math.hypot(this.spots[i].x - x16, this.spots[i].y - y) < hitRadius) {
           this.draggingTarget = i;
           return;
         }
       }
-      if (Math.abs(this.baselineY - y) < HIT_RADIUS) {
+      if (Math.abs(this.baselineY - y) < hitRadius) {
         this.draggingTarget = "baseline";
         return;
       }
-      if (Math.abs(this.frontY - y) < HIT_RADIUS) {
+      if (Math.abs(this.frontY - y) < hitRadius) {
         this.draggingTarget = "front";
         return;
       }
@@ -27330,34 +27338,38 @@ var TlcModal = class extends import_obsidian.Modal {
     const h = this.canvas.height;
     this.ctx.clearRect(0, 0, w, h);
     this.ctx.drawImage(this.img, 0, 0, w, h);
+    const scale = w / 800;
+    const lineW = Math.max(4, 6 * scale);
+    const fontSz = Math.max(20, 28 * scale);
+    const spotR = Math.max(15, 20 * scale);
     const drawLine = (y, color, label) => {
       this.ctx.beginPath();
       this.ctx.moveTo(0, y);
       this.ctx.lineTo(w, y);
       this.ctx.strokeStyle = color;
-      this.ctx.lineWidth = 4;
-      this.ctx.setLineDash([15, 10]);
+      this.ctx.lineWidth = lineW;
+      this.ctx.setLineDash([20 * scale, 15 * scale]);
       this.ctx.stroke();
       this.ctx.setLineDash([]);
       this.ctx.fillStyle = color;
-      this.ctx.font = "30px Arial";
-      this.ctx.fillText(label, 20, y - 10);
+      this.ctx.font = `bold ${fontSz}px Arial`;
+      this.ctx.fillText(label, 20 * scale, y - 10 * scale);
     };
     drawLine(this.frontY, "#ff4444", "Solvent Front");
     drawLine(this.baselineY, "#4488ff", "Baseline");
     this.spots.forEach((s, i) => {
       this.ctx.beginPath();
-      this.ctx.arc(s.x, s.y, 15, 0, 2 * Math.PI);
+      this.ctx.arc(s.x, s.y, spotR, 0, 2 * Math.PI);
       this.ctx.fillStyle = "rgba(0,255,0,0.5)";
       this.ctx.fill();
       this.ctx.strokeStyle = "#00ff00";
-      this.ctx.lineWidth = 3;
+      this.ctx.lineWidth = Math.max(3, 4 * scale);
       this.ctx.stroke();
       this.ctx.fillStyle = "white";
-      this.ctx.font = "bold 24px Arial";
+      this.ctx.font = `bold ${fontSz}px Arial`;
       this.ctx.shadowColor = "black";
-      this.ctx.shadowBlur = 4;
-      this.ctx.fillText(`${i + 1} (Rf: ${s.rf.toFixed(2)})`, s.x + 25, s.y + 10);
+      this.ctx.shadowBlur = 6 * scale;
+      this.ctx.fillText(`${i + 1} (Rf: ${s.rf.toFixed(2)})`, s.x + spotR + 10 * scale, s.y + 10 * scale);
       this.ctx.shadowBlur = 0;
     });
   }
@@ -27379,6 +27391,139 @@ var TlcModal = class extends import_obsidian.Modal {
 };
 
 // SharedEln.ts
+var DEFAULT_LIBRARY = [
+  { name: "DCM (Dichloromethane)", smiles: "ClCCl" },
+  { name: "THF (Tetrahydrofuran)", smiles: "C1CCOC1" },
+  { name: "EtOAc (Ethyl Acetate)", smiles: "CCOC(C)=O" },
+  { name: "DMF (Dimethylformamide)", smiles: "CN(C)C=O" },
+  { name: "DMSO (Dimethyl Sulfoxide)", smiles: "CS(C)=O" },
+  { name: "MeOH (Methanol)", smiles: "CO" },
+  { name: "EtOH (Ethanol)", smiles: "CCO" },
+  { name: "DIPEA (H\xFCnig's Base)", smiles: "CCN(C(C)C)C(C)C" },
+  { name: "TEA (Triethylamine)", smiles: "CCN(CC)CC" },
+  { name: "DMAP", smiles: "CN(C)c1ccncc1" },
+  { name: "HATU", smiles: "CN(C)C(=[N+](C)C)N1N=NC2=CC=CC=C21.F[P-](F)(F)(F)(F)F" },
+  { name: "NaOH (Sodium Hydroxide)", smiles: "[OH-].[Na+]" },
+  { name: "NaHCO3 (Sodium Bicarbonate)", smiles: "OC([O-])=O.[Na+]" },
+  { name: "Na2SO4 (Sodium Sulfate)", smiles: "[Na+].[Na+].[O-]S(=O)(=O)[O-]" },
+  { name: "MgSO4 (Magnesium Sulfate)", smiles: "[Mg+2].[O-]S(=O)(=O)[O-]" }
+];
+async function getCompoundLibrary(plugin) {
+  var _a;
+  const path = (_a = plugin.settings) == null ? void 0 : _a.libraryFilePath;
+  if (!path) return DEFAULT_LIBRARY;
+  const file = plugin.app.vault.getAbstractFileByPath(path);
+  if (file instanceof import_obsidian2.TFile) {
+    try {
+      const content = await plugin.app.vault.read(file);
+      const results = [];
+      const lines = content.split("\n");
+      for (const line of lines) {
+        if (line.trim().startsWith("|")) {
+          const parts = line.split("|").map((p) => p.trim());
+          if (parts.length >= 3) {
+            const name = parts[1];
+            const smiles = parts[2];
+            if (name && smiles && !name.includes("---") && name.toLowerCase() !== "name") {
+              results.push({ name, smiles });
+            }
+          }
+        }
+        const listMatch = line.match(/^-\s+(.+?):\s+(.+)$/);
+        if (listMatch) {
+          results.push({ name: listMatch[1].trim(), smiles: listMatch[2].trim() });
+        }
+      }
+      if (results.length > 0) return results;
+    } catch (e) {
+      console.error("ChemEdit: Failed to read custom library file", e);
+    }
+  }
+  return DEFAULT_LIBRARY;
+}
+async function addCompoundToLibrary(plugin, name, smiles) {
+  var _a;
+  const path = (_a = plugin.settings) == null ? void 0 : _a.libraryFilePath;
+  if (path) {
+    let file = plugin.app.vault.getAbstractFileByPath(path);
+    if (!file) {
+      const header = `# Compound Library
+
+| Name | SMILES |
+|---|---|
+`;
+      file = await plugin.app.vault.create(path, header);
+    }
+    if (file instanceof import_obsidian2.TFile) {
+      const content = await plugin.app.vault.read(file);
+      const newEntry = `| ${name} | ${smiles} |`;
+      await plugin.app.vault.modify(file, content + (content.endsWith("\n") ? "" : "\n") + newEntry + "\n");
+      new import_obsidian2.Notice(`${name} added to library file!`);
+      return;
+    }
+  }
+  if (!plugin.settings.compoundLibrary) plugin.settings.compoundLibrary = [];
+  plugin.settings.compoundLibrary.push({ name, smiles });
+  await plugin.saveSettings();
+  new import_obsidian2.Notice(`${name} added to internal library!`);
+}
+var CompoundSuggestModal = class extends import_obsidian2.FuzzySuggestModal {
+  constructor(app, library, onChoose) {
+    super(app);
+    __publicField(this, "library");
+    __publicField(this, "onChoose");
+    this.library = library;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Search compound library...");
+  }
+  getItems() {
+    return this.library;
+  }
+  getItemText(item) {
+    return item.name;
+  }
+  onChooseItem(item, evt) {
+    this.onChoose(item);
+  }
+};
+var AddToLibraryModal = class extends import_obsidian2.Modal {
+  constructor(app, smiles, onSubmit) {
+    super(app);
+    __publicField(this, "name", "");
+    __publicField(this, "smiles");
+    __publicField(this, "onSubmit");
+    this.smiles = smiles;
+    this.onSubmit = onSubmit;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: "Add to Compound Library" });
+    contentEl.createEl("p", { text: `SMILES: ${this.smiles.substring(0, 50)}${this.smiles.length > 50 ? "..." : ""}`, cls: "color-text-muted", attr: { style: "font-family: monospace; font-size: 11px; word-break: break-all;" } });
+    const input = contentEl.createEl("input", { type: "text", placeholder: "Compound Name (e.g. THF)" });
+    input.style.width = "100%";
+    input.style.marginBottom = "15px";
+    input.onchange = (e) => this.name = e.target.value;
+    const btnRow = contentEl.createDiv({ attr: { style: "display:flex; justify-content:flex-end; gap: 10px;" } });
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+    cancelBtn.onclick = () => this.close();
+    const btn = btnRow.createEl("button", { text: "Add to Library", cls: "mod-cta" });
+    btn.onclick = () => {
+      if (!this.name.trim()) {
+        new import_obsidian2.Notice("Please enter a name.");
+        return;
+      }
+      this.onSubmit(this.name.trim(), this.smiles);
+      this.close();
+    };
+    input.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") btn.click();
+    });
+    setTimeout(() => input.focus(), 50);
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var SharedElnRenderer = class {
   constructor(plugin) {
     __publicField(this, "plugin");
@@ -27394,9 +27539,12 @@ var SharedElnRenderer = class {
     wrapper.style.backgroundColor = "var(--background-primary)";
     wrapper.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.05)";
     wrapper.style.fontFamily = "var(--font-interface)";
+    wrapper.style.width = "100%";
     wrapper.innerHTML = `<h3 class="color-text-muted" style="text-align:center;">\u23F3 Calculating...</h3>`;
     try {
-      const data = parseYaml(source);
+      const safeSource = source.replace(/smiles:\s*(\[.*)$/gm, 'smiles: "$1"');
+      const data = parseYaml(safeSource);
+      if (!data) throw new Error("Empty YAML Data.");
       if (!data.reactants) data.reactants = [];
       if (!data.products) data.products = [];
       const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
@@ -27432,17 +27580,24 @@ var SharedElnRenderer = class {
       const appendSmart = (text, keyword) => {
         if (!view) return;
         const editor = view.editor;
-        const content = editor.getValue();
-        const lines = content.split("\n");
-        let targetLine = lines.findIndex((line) => line.includes(`- **${keyword}:**`));
-        if (targetLine === -1 && keyword === "Procedure") targetLine = lines.findIndex((line) => line.includes(`## \u{1F4DD} Procedure`));
-        if (targetLine === -1) targetLine = lines.findIndex((line) => line.includes(`Analytical Data`));
+        const lines = editor.getValue().split("\n");
+        let targetLine = lines.findIndex((line) => line.includes(`## \u{1F4DD} Procedure`));
+        if (targetLine === -1 && keyword === "Analytical Data") {
+          targetLine = lines.findIndex((line) => line.includes(`## \u{1F52C} Analytical Data`));
+        }
         if (targetLine !== -1) {
+          let insertLine = targetLine + 1;
+          while (insertLine < lines.length && !lines[insertLine].startsWith("##")) {
+            insertLine++;
+          }
+          while (insertLine > targetLine + 1 && lines[insertLine - 1].trim() === "") {
+            insertLine--;
+          }
           editor.replaceRange(`
 ${text}
-`, { line: targetLine, ch: editor.getLine(targetLine).length });
+`, { line: insertLine, ch: 0 });
         } else {
-          const info = ctx.getSectionInfo(el);
+          const info = ctx.getSectionInfo(el.parentElement || el);
           if (info) editor.replaceRange(`
 ${text}
 `, { line: info.lineEnd + 1, ch: 0 });
@@ -27482,11 +27637,11 @@ ${text}
 `;
           rfData.forEach((s, i) => md += `| ${i + 1} | **${s.rf.toFixed(2)}** |
 `);
-          appendSmart(md, "TLC");
+          appendSmart(md, "Analytical Data");
           new import_obsidian2.Notice(`Added ${filename}`);
         }).open();
       });
-      createBtn("\u{1F4CB} Copy", "Copy Stoichiometry Table to Clipboard (Excel Ready)", () => {
+      createBtn("\u{1F4CB} Copy", "Copy Stoichiometry Table to Clipboard", () => {
         let tsv = "Type	Name	SMILES	Eq	MW	m [mg]	n [mmol]	V [mL]	Yield [%]\n";
         data.reactants.forEach((r) => {
           var _a, _b, _c, _d;
@@ -27506,7 +27661,7 @@ ${text}
       });
       createBtn("\u{1F4DD} Edit", "Edit Metadata & Conditions", () => {
         if (!view) return;
-        const info = ctx.getSectionInfo(el);
+        const info = ctx.getSectionInfo(el.parentElement || el);
         if (info) {
           new ElnMetaEditorModal(this.plugin, data, async (updatedYamlObj, shouldRename) => {
             var _a;
@@ -27529,12 +27684,17 @@ ${newYaml}\`\`\``, { line: info.lineStart, ch: 0 }, { line: info.lineEnd, ch: vi
       });
       const fetchChemProps = async (smiles) => {
         try {
-          const res = await (0, import_obsidian2.requestUrl)(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/property/MolecularWeight,MolecularFormula/JSON`);
-          const props = res.json.PropertyTable.Properties[0];
-          return { mw: parseFloat(props.MolecularWeight), formula: props.MolecularFormula };
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), 2e3);
+          const res = await (0, import_obsidian2.requestUrl)({ url: `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/property/MolecularWeight,MolecularFormula/JSON`, method: "GET" });
+          clearTimeout(id);
+          if (res.status === 200) {
+            const props = res.json.PropertyTable.Properties[0];
+            return { mw: parseFloat(props.MolecularWeight), formula: props.MolecularFormula };
+          }
         } catch (e) {
-          return { mw: 0, formula: "Unknown" };
         }
+        return { mw: 0, formula: "Unknown" };
       };
       for (const r of data.reactants) {
         if (r.smiles && (!r.mw || !r.formula)) {
@@ -27557,34 +27717,40 @@ ${newYaml}\`\`\``, { line: info.lineStart, ch: 0 }, { line: info.lineEnd, ch: vi
       }
       let refMmol = 0;
       if (limitingR) {
-        if (limitingR.mmol) {
+        if (limitingR.mmol !== void 0 && limitingR.mmol !== null) {
           refMmol = limitingR.mmol / (limitingR.eq || 1);
-        } else if (limitingR.mass && limitingR.mw) {
+        } else if (limitingR.mass !== void 0 && limitingR.mass !== null && limitingR.mw) {
           let pureMass = limitingR.mass * ((limitingR.purity || 100) / 100);
           refMmol = pureMass / limitingR.mw / (limitingR.eq || 1);
-        } else if (limitingR.volume && limitingR.molarity) {
+        } else if (limitingR.volume !== void 0 && limitingR.volume !== null && limitingR.molarity) {
           refMmol = limitingR.volume * limitingR.molarity / (limitingR.eq || 1);
         }
       }
       data.reactants.forEach((r) => {
         r.eq = r.eq || 1;
         r.mmol = refMmol * r.eq;
-        if (r.molarity) {
+        if (r.molarity && r.molarity > 0) {
           r.volume = r.mmol / r.molarity;
-          r.mass = r.mmol * (r.mw || 0);
+          if (r.mw && r.mass === void 0) r.mass = r.mmol * r.mw;
         } else if (r.mw) {
           let neededPureMass = r.mmol * r.mw;
           r.mass = neededPureMass / ((r.purity || 100) / 100);
-          if (r.density) r.volume = r.mass / 1e3 / r.density;
+          if (r.density && r.density > 0) r.volume = r.mass / 1e3 / r.density;
         }
       });
       data.products.forEach((p) => {
         p.eq = p.eq || 1;
         p.theory_mmol = refMmol * p.eq;
-        p.theory_mass = p.theory_mmol * p.mw;
-        if (p.mass_isolated) {
-          p.yield = (p.mass_isolated / p.theory_mass * 100).toFixed(1);
+        if (p.mw) p.theory_mass = p.theory_mmol * p.mw;
+        if (p.mmol_isolated !== void 0 && p.mw && p.mass_isolated === void 0) {
+          p.mass_isolated = p.mmol_isolated * p.mw;
+        } else if (p.mass_isolated !== void 0 && p.mw && p.mmol_isolated === void 0) {
           p.mmol_isolated = p.mass_isolated / p.mw;
+        }
+        if (p.mmol_isolated !== void 0 && p.theory_mmol) {
+          p.yield = (p.mmol_isolated / p.theory_mmol * 100).toFixed(1);
+        } else if (p.mass_isolated !== void 0 && p.theory_mass) {
+          p.yield = (p.mass_isolated / p.theory_mass * 100).toFixed(1);
         }
       });
       const thColor = "var(--background-secondary-alt)";
@@ -27646,17 +27812,17 @@ ${newYaml}\`\`\``, { line: info.lineStart, ch: 0 }, { line: info.lineEnd, ch: vi
                     <td style="padding: 10px;"><div class="eln-structure table-size" data-type="reactants" data-index="${i}" data-smiles="${r.smiles || ""}" style="width:90px; height:90px; cursor:pointer;" title="Double-click to edit"></div></td>
                     <td style="padding: 10px;"><b>${r.name || "-"}</b> &nbsp; ${ghsStr}</td>
                     <td style="padding: 10px; color:var(--text-muted);">${r.mw ? r.mw.toFixed(2) : "-"}</td>
-                    <td style="padding: 10px;">${r.mmol ? r.mmol.toFixed(2) : "-"}</td>
+                    <td style="padding: 10px;">${r.mmol !== void 0 ? r.mmol.toFixed(2) : "-"}</td>
                     <td style="padding: 10px; color:var(--text-muted);">${concStr}</td>
-                    <td style="padding: 10px;">${r.mass ? r.mass.toFixed(1) : "-"}</td>
-                    <td style="padding: 10px;">${r.volume ? r.volume.toFixed(3) : "-"}</td>
+                    <td style="padding: 10px;">${r.mass !== void 0 ? r.mass.toFixed(1) : "-"}</td>
+                    <td style="padding: 10px;">${r.volume !== void 0 ? r.volume.toFixed(3) : "-"}</td>
                 </tr>`;
       });
       html += `</table></div><h4 style="margin-bottom: 10px;">Products</h4>
                 <div style="width: 100%; overflow-x: auto; margin-bottom: 20px;">
                 <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; min-width: 600px;">
                     <tr style="background-color: ${thColor}; border-bottom: 2px solid var(--background-modifier-border);">
-                        <th style="padding: 10px;">Eq</th><th style="padding: 10px;">Structure</th><th style="padding: 10px;">Name</th><th style="padding: 10px;">MW</th><th style="padding: 10px;">n [mmol]</th><th style="padding: 10px;">m [mg]</th><th style="padding: 10px;">Yield [%]</th>
+                        <th style="padding: 10px;">Eq</th><th style="padding: 10px;">Structure</th><th style="padding: 10px;">Name</th><th style="padding: 10px;">MW</th><th style="padding: 10px;">n [mmol]</th><th style="padding: 10px;">Isol. [mg]</th><th style="padding: 10px;">Yield [%]</th>
                     </tr>`;
       data.products.forEach((p, i) => {
         const ghsStr = p.ghs && p.ghs.length > 0 ? `<span title="GHS Hazards">${p.ghs.join(" ")}</span>` : "";
@@ -27672,20 +27838,298 @@ ${newYaml}\`\`\``, { line: info.lineStart, ch: 0 }, { line: info.lineEnd, ch: vi
                     <td style="padding: 10px;"><div class="eln-structure table-size" data-type="products" data-index="${i}" data-smiles="${p.smiles || ""}" style="width:90px; height:90px; cursor:pointer;" title="Double-click to edit"></div></td>
                     <td style="padding: 10px;"><b>${p.name || "-"}</b> &nbsp; ${ghsStr}</td>
                     <td style="padding: 10px; color:var(--text-muted);">${p.mw ? p.mw.toFixed(2) : "-"}</td>
-                    <td style="padding: 10px;">${p.mmol_isolated ? p.mmol_isolated.toFixed(2) : p.theory_mmol ? p.theory_mmol.toFixed(2) : "-"}</td>
-                    <td style="padding: 10px;">${p.mass_isolated ? p.mass_isolated.toFixed(1) : "-"}</td>
+                    <td style="padding: 10px;">${p.mmol_isolated !== void 0 ? p.mmol_isolated.toFixed(2) : p.theory_mmol ? p.theory_mmol.toFixed(2) : "-"}</td>
+                    <td style="padding: 10px;">${p.mass_isolated !== void 0 ? p.mass_isolated.toFixed(1) : "-"}</td>
                     <td style="padding: 10px; font-size: 14px; color: ${yieldColor};"><b>${p.yield ? p.yield + "%" : "-"}</b></td>
                 </tr>`;
       });
       html += `</table></div>`;
+      if (data.procedure || data.notes) {
+        html += `<div style="margin-top: 20px; padding: 15px; background: var(--background-secondary); border-radius: 8px; border-left: 4px solid var(--interactive-accent);">
+                    <b style="display: block; margin-bottom: 5px;">Procedure / Notes:</b>
+                    <div style="color: var(--text-muted); white-space: pre-wrap; font-size: 13px;">${data.procedure || data.notes}</div>
+                </div>`;
+      }
       html += `</div>`;
-      const contentDiv = wrapper.createDiv();
+      const contentDiv = document.createElement("div");
       contentDiv.innerHTML = html;
+      wrapper.appendChild(contentDiv);
       return wrapper;
     } catch (err) {
       wrapper.innerHTML = `<div style="padding: 20px; color: var(--text-error); background: var(--background-secondary); border-radius: 8px;"><b>ELN Formatting Error:</b><br>${err.message}</div>`;
       return wrapper;
     }
+  }
+};
+var ElnGalleryRenderer = class {
+  constructor(plugin) {
+    __publicField(this, "plugin");
+    this.plugin = plugin;
+  }
+  async renderGalleryBlock(source, el, ctx) {
+    var _a;
+    const { parseYaml } = require("obsidian");
+    const match = source.match(/path:\s*['"]?(.*?)['"]?(?:\n|$)/);
+    const folderPath = match ? match[1].trim() : "";
+    if (!folderPath) {
+      el.createEl("div", { text: "\u26A0\uFE0F Please specify a folder path (e.g., path: Experiments/)", cls: "color-text-error" });
+      return;
+    }
+    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
+    if (!folder || !("children" in folder)) {
+      el.createEl("div", { text: `\u26A0\uFE0F Folder not found: ${folderPath}`, cls: "color-text-error" });
+      return;
+    }
+    const files = folder.children.filter((f) => f instanceof import_obsidian2.TFile && f.extension.toLowerCase() === "md");
+    const header = el.createDiv({ attr: { style: "display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;" } });
+    const countLabel = header.createDiv({ text: `Loading...`, attr: { style: "font-size: 13px; color: var(--text-muted); font-weight: 500;" } });
+    const searchInput = header.createEl("input", { type: "search", placeholder: "Search experiments...", attr: { style: "width: 250px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--background-modifier-border); background: var(--background-primary);" } });
+    const container = el.createDiv({ cls: "chem-gallery-container" });
+    container.style.display = "grid";
+    container.style.gridTemplateColumns = "repeat(auto-fill, minmax(140px, 1fr))";
+    container.style.gap = "15px";
+    container.style.padding = "5px 0";
+    const cards = [];
+    let renderCount = 0;
+    for (const file of files) {
+      const content = await this.plugin.app.vault.cachedRead(file);
+      const blockMatch = content.match(/```eln\s*\n([\s\S]*?)\n```/);
+      if (!blockMatch) continue;
+      try {
+        const safeSource = blockMatch[1].replace(/smiles:\s*(\[.*)$/gm, 'smiles: "$1"');
+        const yamlObj = parseYaml(safeSource);
+        let dataToRender = "";
+        if (yamlObj.products && yamlObj.products.length > 0 && typeof yamlObj.products[0].smiles === "string" && yamlObj.products[0].smiles.trim()) {
+          dataToRender = yamlObj.products[0].smiles.trim();
+        } else if (yamlObj.reactants && yamlObj.reactants.length > 0 && typeof yamlObj.reactants[0].smiles === "string" && yamlObj.reactants[0].smiles.trim()) {
+          dataToRender = yamlObj.reactants[0].smiles.trim();
+        } else {
+          continue;
+        }
+        const searchableText = `${file.name.toLowerCase()} ${((_a = yamlObj.code) == null ? void 0 : _a.toLowerCase()) || ""}`;
+        renderCount++;
+        const card = container.createDiv({ cls: "chem-gallery-card" });
+        card.style.border = "1px solid var(--background-modifier-border)";
+        card.style.borderRadius = "8px";
+        card.style.padding = "10px";
+        card.style.display = "flex";
+        card.style.flexDirection = "column";
+        card.style.alignItems = "center";
+        card.style.backgroundColor = "var(--background-primary)";
+        card.style.cursor = "pointer";
+        card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
+        card.onmouseover = () => card.style.borderColor = "var(--interactive-accent)";
+        card.onmouseout = () => card.style.borderColor = "var(--background-modifier-border)";
+        const previewWrapper = card.createDiv();
+        previewWrapper.style.width = "100%";
+        previewWrapper.style.height = "100px";
+        previewWrapper.style.display = "flex";
+        previewWrapper.style.justifyContent = "center";
+        previewWrapper.style.alignItems = "center";
+        const label = card.createDiv();
+        label.textContent = yamlObj.code || file.basename;
+        label.style.fontSize = "12px";
+        label.style.marginTop = "10px";
+        label.style.textAlign = "center";
+        label.style.wordBreak = "break-word";
+        label.style.color = "var(--text-normal)";
+        label.style.fontWeight = "500";
+        cards.push({ el: card, text: searchableText });
+        card.onclick = () => this.plugin.app.workspace.getLeaf(false).openFile(file);
+        if (!dataToRender) {
+          previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">No Structure</span>`;
+          continue;
+        }
+        previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">\u23F3</span>`;
+        requestAnimationFrame(async () => {
+          try {
+            const previewEl = await this.plugin.api.renderStructure(dataToRender, 120, 100);
+            previewWrapper.empty();
+            if (previewEl) {
+              previewEl.style.maxWidth = "100%";
+              previewEl.style.maxHeight = "100%";
+              previewWrapper.appendChild(previewEl);
+            } else {
+              previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
+            }
+          } catch (e) {
+            previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
+          }
+        });
+      } catch (e) {
+      }
+    }
+    countLabel.textContent = `${renderCount} experiments`;
+    searchInput.addEventListener("input", (e) => {
+      const query = e.target.value.toLowerCase();
+      let visibleCount = 0;
+      cards.forEach((c) => {
+        if (c.text.includes(query)) {
+          c.el.style.display = "flex";
+          visibleCount++;
+        } else {
+          c.el.style.display = "none";
+        }
+      });
+      countLabel.textContent = `${visibleCount} / ${renderCount} experiments`;
+    });
+  }
+  async renderChemGallery(source, el, ctx) {
+    const { parseYaml } = require("obsidian");
+    const match = source.match(/path:\s*['"]?(.*?)['"]?(?:\n|$)/);
+    const folderPath = match ? match[1].trim() : "";
+    if (!folderPath) {
+      el.createEl("div", { text: "\u26A0\uFE0F Please specify a folder path", cls: "color-text-error" });
+      return;
+    }
+    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
+    if (!folder || !("children" in folder)) {
+      el.createEl("div", { text: `\u26A0\uFE0F Folder not found`, cls: "color-text-error" });
+      return;
+    }
+    const files = folder.children.filter((f) => f instanceof import_obsidian2.TFile && f.extension.toLowerCase() === "md");
+    const container = el.createDiv({ cls: "chem-gallery-container" });
+    container.style.display = "grid";
+    container.style.gridTemplateColumns = "repeat(auto-fill, minmax(140px, 1fr))";
+    container.style.gap = "15px";
+    container.style.padding = "5px 0";
+    for (const file of files) {
+      const content = await this.plugin.app.vault.cachedRead(file);
+      const blockMatch = content.match(/```(smiles|mol)\s*\n([\s\S]*?)\n```/);
+      if (!blockMatch) continue;
+      const format = blockMatch[1];
+      const dataToRender = blockMatch[2].trim();
+      if (!dataToRender) continue;
+      const card = container.createDiv({ cls: "chem-gallery-card" });
+      card.style.border = "1px solid var(--background-modifier-border)";
+      card.style.borderRadius = "8px";
+      card.style.padding = "10px";
+      card.style.display = "flex";
+      card.style.flexDirection = "column";
+      card.style.alignItems = "center";
+      card.style.backgroundColor = "var(--background-primary)";
+      card.style.cursor = "pointer";
+      card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
+      const previewWrapper = card.createDiv();
+      previewWrapper.style.width = "100%";
+      previewWrapper.style.height = "100px";
+      previewWrapper.style.display = "flex";
+      previewWrapper.style.justifyContent = "center";
+      previewWrapper.style.alignItems = "center";
+      previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">\u23F3</span>`;
+      const label = card.createDiv();
+      label.textContent = file.basename;
+      label.style.fontSize = "12px";
+      label.style.marginTop = "10px";
+      label.style.textAlign = "center";
+      label.style.wordBreak = "break-word";
+      label.style.color = "var(--text-normal)";
+      label.style.fontWeight = "500";
+      card.onclick = () => this.plugin.app.workspace.getLeaf(false).openFile(file);
+      requestAnimationFrame(async () => {
+        try {
+          const previewEl = await this.plugin.api.renderStructure(dataToRender, 120, 100);
+          previewWrapper.empty();
+          if (previewEl) {
+            previewEl.style.maxWidth = "100%";
+            previewEl.style.maxHeight = "100%";
+            previewWrapper.appendChild(previewEl);
+          } else {
+            previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
+          }
+        } catch (e) {
+          previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
+        }
+      });
+    }
+  }
+};
+async function createNewElnExperiment(app, code, folderPath = "", sectionsString = "TLC, LCMS, NMR") {
+  const { stringifyYaml } = require("obsidian");
+  const baseCode = code.trim() || "Experiment";
+  const defaultData = {
+    code: baseCode,
+    status: "Planned",
+    solvent: "",
+    temperature: "rt",
+    duration: "12 h",
+    reactants: [],
+    products: []
+  };
+  const yaml = stringifyYaml(defaultData);
+  const dateStr = window.moment().format("YYYY-MM-DD");
+  const sections = sectionsString.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  let analyticalDataStr = "";
+  sections.forEach((sec) => analyticalDataStr += `- **${sec}:**
+`);
+  const template = `---
+tags: [experiment]
+date: ${dateStr}
+---
+
+\`\`\`eln
+${yaml}
+\`\`\`
+
+## \u{1F4DD} Procedure & Observations
+1. Add reactant A to the flask...
+2. Stir at room temperature...
+3. 
+
+## \u{1F52C} Analytical Data
+${analyticalDataStr}`;
+  let safeCode = baseCode.replace(/[/\\?%*:|"<>]/g, "-");
+  let path = folderPath && folderPath !== "/" ? `${folderPath}/${safeCode}.md` : `${safeCode}.md`;
+  let finalPath = path;
+  let counter = 1;
+  while (app.vault.getAbstractFileByPath(finalPath)) {
+    finalPath = folderPath && folderPath !== "/" ? `${folderPath}/${safeCode}-${counter}.md` : `${safeCode}-${counter}.md`;
+    counter++;
+  }
+  try {
+    const newFile = await app.vault.create(finalPath, template);
+    app.workspace.getLeaf(false).openFile(newFile);
+    new import_obsidian2.Notice(`Created new experiment: ${newFile.basename}`);
+  } catch (e) {
+    new import_obsidian2.Notice(`Error creating experiment: ${e.message}`);
+  }
+}
+var CreateExperimentModal = class extends import_obsidian2.Modal {
+  constructor(app, defaultCode, onSubmit) {
+    super(app);
+    __publicField(this, "onSubmit");
+    __publicField(this, "code");
+    this.onSubmit = onSubmit;
+    this.code = defaultCode;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: "Create New Experiment" });
+    const wrap = contentEl.createDiv({ attr: { style: "margin-bottom: 20px;" } });
+    wrap.createEl("div", { text: "Experiment Code (e.g. EXP-001)", cls: "color-text-muted", attr: { style: "font-size:12px; margin-bottom:5px;" } });
+    const input = wrap.createEl("input", { type: "text", value: this.code, attr: { style: "width:100%;" } });
+    input.onchange = (e) => this.code = e.target.value;
+    input.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        this.onSubmit(this.code.trim());
+        this.close();
+      }
+    });
+    const btnRow = contentEl.createDiv({ attr: { style: "display:flex; justify-content:flex-end; gap: 10px;" } });
+    const cancel = btnRow.createEl("button", { text: "Cancel" });
+    cancel.onclick = () => this.close();
+    const create = btnRow.createEl("button", { text: "Create", cls: "mod-cta" });
+    create.onclick = () => {
+      this.onSubmit(this.code.trim());
+      this.close();
+    };
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 50);
+  }
+  onClose() {
+    this.contentEl.empty();
   }
 };
 var CloneExperimentModal = class extends import_obsidian2.Modal {
@@ -27780,18 +28224,7 @@ var ElnMetaEditorModal = class extends import_obsidian2.Modal {
     if (!this.data.products) this.data.products = [];
     this.onSave = onSave;
   }
-  // CASCADE API 1: Name to SMILES (OPSIN -> Cactus -> PubChem)
   async fetchSmilesFromName(name) {
-    try {
-      const opsin = await (0, import_obsidian2.requestUrl)(`https://opsin.ch.cam.ac.uk/opsin/${encodeURIComponent(name)}.smi`);
-      if (opsin.status === 200) return opsin.text.trim();
-    } catch (e) {
-    }
-    try {
-      const cactus = await (0, import_obsidian2.requestUrl)(`https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(name)}/smiles`);
-      if (cactus.status === 200) return cactus.text.trim();
-    } catch (e) {
-    }
     try {
       const pubchem = await (0, import_obsidian2.requestUrl)(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/property/IsomericSMILES/JSON`);
       if (pubchem.status === 200) return pubchem.json.PropertyTable.Properties[0].IsomericSMILES;
@@ -27799,14 +28232,8 @@ var ElnMetaEditorModal = class extends import_obsidian2.Modal {
     }
     return "";
   }
-  // CASCADE API 2: Smiles to Data
   async fetchChemDataFromSmiles(smiles) {
     let resObj = { name: "", mw: 0, formula: "", ghs: [] };
-    try {
-      const cactusName = await (0, import_obsidian2.requestUrl)(`https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(smiles)}/iupac_name`);
-      if (cactusName.status === 200) resObj.name = cactusName.text.trim().split("\n")[0];
-    } catch (e) {
-    }
     try {
       const res = await (0, import_obsidian2.requestUrl)(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/property/Title,MolecularWeight,MolecularFormula/JSON`);
       if (res.status === 200) {
@@ -27851,7 +28278,7 @@ var ElnMetaEditorModal = class extends import_obsidian2.Modal {
       this.onSave(this.data, shouldRename);
       this.close();
     };
-    const metaGrid = contentEl.createDiv({ attr: { style: "display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;" } });
+    const metaGrid = contentEl.createDiv({ attr: { style: "display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;" } });
     const addInput = (parent, label, key, placeholder = "") => {
       const wrap = parent.createDiv();
       wrap.createEl("div", { text: label, cls: "color-text-muted", attr: { style: "font-size:12px; margin-bottom:3px;" } });
@@ -27888,12 +28315,28 @@ var ElnMetaEditorModal = class extends import_obsidian2.Modal {
       const actionRow = row.createDiv({ attr: { style: "display: flex; gap: 6px; justify-content: flex-start; flex-wrap: wrap;" } });
       const drawBtn = actionRow.createEl("button", { text: "\u270F\uFE0F Draw", attr: { style: "font-size:11px; padding: 4px 8px;" } });
       drawBtn.onclick = () => {
-        this.plugin.openKetcherModal(item.smiles || "", "smiles", (newSmiles) => {
-          item.smiles = newSmiles;
-          this.render();
-        });
+        if (this.plugin.api && this.plugin.api.openEditor) {
+          this.plugin.api.openEditor(item.smiles || "", "smiles", (newSmiles) => {
+            item.smiles = newSmiles;
+            this.render();
+          });
+        } else if (typeof this.plugin.openKetcherModal === "function") {
+          this.plugin.openKetcherModal(item.smiles || "", "smiles", (newSmiles) => {
+            item.smiles = newSmiles;
+            this.render();
+          });
+        }
       };
-      const fetchSmilesBtn = actionRow.createEl("button", { text: "\u{1F9EA} Name \u2192 Structure", attr: { style: "font-size:11px; padding: 4px 8px;" } });
+      const libBtn = actionRow.createEl("button", { text: "\u{1F4DA} Lib", attr: { style: "font-size:11px; padding: 4px 8px;" } });
+      libBtn.onclick = async () => {
+        const lib = await getCompoundLibrary(this.plugin);
+        new CompoundSuggestModal(this.plugin.app, lib, (selected) => {
+          item.name = selected.name;
+          item.smiles = selected.smiles;
+          this.render();
+        }).open();
+      };
+      const fetchSmilesBtn = actionRow.createEl("button", { text: "\u{1F9EA} N \u2192 S", attr: { style: "font-size:11px; padding: 4px 8px;", title: "Name to Structure" } });
       fetchSmilesBtn.onclick = async () => {
         if (!item.name) {
           new import_obsidian2.Notice("Enter a name first.");
@@ -27907,10 +28350,10 @@ var ElnMetaEditorModal = class extends import_obsidian2.Modal {
           this.render();
         } else {
           new import_obsidian2.Notice("Structure not found.");
-          fetchSmilesBtn.innerText = "\u{1F9EA} Name \u2192 Structure";
+          fetchSmilesBtn.innerText = "\u{1F9EA} N \u2192 S";
         }
       };
-      const fetchDataBtn = actionRow.createEl("button", { text: "\u{1F50D} Structure \u2192 Data", attr: { style: "font-size:11px; padding: 4px 8px;" } });
+      const fetchDataBtn = actionRow.createEl("button", { text: "\u{1F50D} S \u2192 D", attr: { style: "font-size:11px; padding: 4px 8px;", title: "Structure to Data" } });
       fetchDataBtn.onclick = async () => {
         if (!item.smiles) {
           new import_obsidian2.Notice("Draw a structure first.");
@@ -27928,31 +28371,51 @@ var ElnMetaEditorModal = class extends import_obsidian2.Modal {
         } catch (e) {
           new import_obsidian2.Notice("Could not fetch data.");
         }
-        fetchDataBtn.innerText = "\u{1F50D} Structure \u2192 Data";
+        fetchDataBtn.innerText = "\u{1F50D} S \u2192 D";
         this.render();
       };
-      const delBtn = actionRow.createEl("button", { text: "\u{1F5D1}\uFE0F Remove", attr: { style: "color: var(--text-error); font-size:11px; padding: 4px 8px; margin-left:auto;" } });
+      const delBtn = actionRow.createEl("button", { text: "\u{1F5D1}\uFE0F", attr: { style: "color: var(--text-error); font-size:11px; padding: 4px 8px; margin-left:auto;" } });
       delBtn.onclick = () => {
         this.data[type].splice(idx, 1);
         this.render();
       };
-      const botRow = row.createDiv({ attr: { style: "display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 5px;" } });
-      const makeNumInp = (key, label) => {
+      const botRow = row.createDiv({ attr: { style: "display: grid; grid-template-columns: repeat(auto-fit, minmax(75px, 1fr)); gap: 8px; margin-top: 5px;" } });
+      const makeNumInp = (key, label, onUpdate) => {
         const wrap = botRow.createDiv({ attr: { style: "display: flex; flex-direction: column;" } });
-        wrap.createEl("span", { text: label, attr: { style: "font-size: 10px; color: var(--text-muted); margin-bottom: 2px;" } });
-        const inp = wrap.createEl("input", { type: "number", value: item[key] || "", attr: { style: "width: 100%;" } });
-        inp.onchange = (e) => item[key] = parseFloat(e.target.value) || void 0;
+        wrap.createEl("span", { text: label, attr: { style: "font-size: 10px; color: var(--text-muted); margin-bottom: 2px; white-space: nowrap;" } });
+        const inp = wrap.createEl("input", { type: "number", value: item[key] !== void 0 ? item[key] : "", attr: { style: "width: 100%; padding: 4px; box-sizing: border-box;" } });
+        inp.onchange = (e) => {
+          const val = parseFloat(e.target.value);
+          if (isNaN(val)) delete item[key];
+          else item[key] = val;
+          if (onUpdate && !isNaN(val)) onUpdate(val);
+        };
       };
       if (type === "reactants") {
         makeNumInp("eq", "Eq");
-        makeNumInp("mass", "Mass (mg)");
-        makeNumInp("volume", "Vol (mL)");
-        makeNumInp("purity", "Purity (%)");
-        makeNumInp("molarity", "Conc. (M)");
+        makeNumInp("mmol", "n(mmol)", () => {
+          delete item.mass;
+          delete item.volume;
+        });
+        makeNumInp("mass", "m(mg)", () => {
+          delete item.mmol;
+          delete item.volume;
+        });
+        makeNumInp("volume", "V(mL)", () => {
+          delete item.mmol;
+          delete item.mass;
+        });
+        makeNumInp("purity", "Purity(%)");
+        makeNumInp("molarity", "Conc(M)");
         makeNumInp("density", "Density");
       } else {
         makeNumInp("eq", "Eq");
-        makeNumInp("mass_isolated", "Yield (mg)");
+        makeNumInp("mmol_isolated", "Isol(mmol)", () => {
+          delete item.mass_isolated;
+        });
+        makeNumInp("mass_isolated", "Isol(mg)", () => {
+          delete item.mmol_isolated;
+        });
       }
     };
     const rHeader = contentEl.createDiv({ attr: { style: "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;" } });
@@ -27992,7 +28455,16 @@ var DEFAULT_SETTINGS = {
   showElnRibbonIcon: true,
   defaultElnDirectory: "",
   defaultExpPrefix: "EXP",
-  analyticalSections: "TLC, LCMS, NMR"
+  analyticalSections: "TLC, LCMS, NMR",
+  libraryFilePath: "",
+  contextUrl1Name: "Search PubChem",
+  contextUrl1: "https://pubchem.ncbi.nlm.nih.gov/#query={{smiles}}",
+  contextUrl2Name: "Search MolPort",
+  contextUrl2: "https://www.molport.com/shop/search-results?smiles={{smiles}}",
+  contextUrl3Name: "Predict NMR (NMRium)",
+  contextUrl3: "https://app.nmrium.com/predict?smiles={{smiles}}",
+  contextUrl4Name: "Search ChemSpider",
+  contextUrl4: "https://www.chemspider.com/Search.aspx?q={{smiles}}"
 };
 var ChemEditUniversalPlugin = class extends import_obsidian3.Plugin {
   constructor() {
@@ -28080,6 +28552,117 @@ var ChemEditUniversalPlugin = class extends import_obsidian3.Plugin {
       }
     });
   }
+  // --- CONTEXT MENU HELPER ---
+  showChemicalContextMenu(e, smiles) {
+    e.preventDefault();
+    const menu = new import_obsidian3.Menu();
+    menu.addItem((item) => {
+      item.setTitle("Add to Compound Library").setIcon("bookmark").onClick(() => {
+        new AddToLibraryModal(this.app, smiles, (name, sm) => {
+          addCompoundToLibrary(this, name, sm);
+        }).open();
+      });
+    });
+    menu.addSeparator();
+    menu.addItem((item) => {
+      item.setTitle("Copy SMILES").setIcon("copy").onClick(async () => {
+        await navigator.clipboard.writeText(smiles);
+        new import_obsidian3.Notice("SMILES copied to clipboard!");
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Copy MOL Block (Offline)").setIcon("file-text").onClick(async () => {
+        try {
+          const mol = oot.fromSmiles(smiles);
+          const molBlock = mol.toMolfile();
+          if (molBlock) {
+            await navigator.clipboard.writeText(molBlock);
+            new import_obsidian3.Notice("MOL Block copied to clipboard!");
+          }
+        } catch (err) {
+          new import_obsidian3.Notice("Error generating MOL Block.");
+        }
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Copy IUPAC Name (Web)").setIcon("whole-word").onClick(async () => {
+        var _a, _b, _c, _d;
+        try {
+          new import_obsidian3.Notice("Fetching IUPAC name...");
+          const res = await (0, import_obsidian3.requestUrl)(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/property/IUPACName/JSON`);
+          if (res.status === 200) {
+            const name = (_d = (_c = (_b = (_a = res.json) == null ? void 0 : _a.PropertyTable) == null ? void 0 : _b.Properties) == null ? void 0 : _c[0]) == null ? void 0 : _d.IUPACName;
+            if (name) {
+              await navigator.clipboard.writeText(name);
+              new import_obsidian3.Notice("IUPAC Name copied!");
+            } else {
+              new import_obsidian3.Notice("IUPAC Name not found.");
+            }
+          } else {
+            new import_obsidian3.Notice("Failed to fetch IUPAC Name.");
+          }
+        } catch (err) {
+          new import_obsidian3.Notice("Error fetching IUPAC Name.");
+        }
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Copy MW & Formula (Web)").setIcon("info").onClick(async () => {
+        var _a, _b, _c;
+        try {
+          const res = await (0, import_obsidian3.requestUrl)(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/property/MolecularWeight,MolecularFormula/JSON`);
+          if (res.status === 200) {
+            const p = (_c = (_b = (_a = res.json) == null ? void 0 : _a.PropertyTable) == null ? void 0 : _b.Properties) == null ? void 0 : _c[0];
+            if (p && p.MolecularFormula && p.MolecularWeight) {
+              await navigator.clipboard.writeText(`Formula: ${p.MolecularFormula}, MW: ${p.MolecularWeight}`);
+              new import_obsidian3.Notice("Properties copied!");
+            } else {
+              new import_obsidian3.Notice("Properties not found.");
+            }
+          }
+        } catch (err) {
+          new import_obsidian3.Notice("Error fetching properties.");
+        }
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Copy CAS Number (Web)").setIcon("hash").onClick(async () => {
+        try {
+          new import_obsidian3.Notice("Fetching CAS Number...");
+          const res = await (0, import_obsidian3.requestUrl)(`https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(smiles)}/cas`);
+          if (res.status === 200) {
+            const cas = res.text.split("\n")[0].trim();
+            if (cas && !cas.includes("<h1>")) {
+              await navigator.clipboard.writeText(cas);
+              new import_obsidian3.Notice(`CAS Number copied: ${cas}`);
+            } else {
+              new import_obsidian3.Notice("CAS Number not found for this structure.");
+            }
+          } else {
+            new import_obsidian3.Notice("Failed to fetch CAS Number.");
+          }
+        } catch (err) {
+          new import_obsidian3.Notice("Error fetching CAS Number.");
+        }
+      });
+    });
+    menu.addSeparator();
+    const addCustomLink = (name, urlTemplate, icon) => {
+      if (!name || !urlTemplate) return;
+      menu.addItem((item) => {
+        item.setTitle(`${name} (Web)`).setIcon(icon).onClick(() => {
+          const url = urlTemplate.replace(/\{\{smiles\}\}/gi, encodeURIComponent(smiles));
+          window.open(url, "_blank");
+        });
+      });
+    };
+    addCustomLink(this.settings.contextUrl1Name, this.settings.contextUrl1, "search");
+    addCustomLink(this.settings.contextUrl2Name, this.settings.contextUrl2, "shopping-cart");
+    addCustomLink(this.settings.contextUrl3Name, this.settings.contextUrl3, "activity");
+    addCustomLink(this.settings.contextUrl4Name, this.settings.contextUrl4, "link");
+    menu.showAtMouseEvent(e);
+  }
+  // --- ALIAS FOR ELN BRIDGE ---
   openKetcherModal(initialData, format, onSave) {
     new OCLEditorModal(this, initialData, format, onSave).open();
   }
@@ -28106,6 +28689,16 @@ var ChemEditUniversalPlugin = class extends import_obsidian3.Plugin {
         this.openKetcherModal("", "smiles", (newData) => {
           this.insertAtCursor(editor, newData, "smiles");
         });
+      }
+    });
+    this.addCommand({
+      id: "insert-from-library",
+      name: "Insert SMILES from Library",
+      editorCallback: async (editor) => {
+        const lib = await getCompoundLibrary(this);
+        new CompoundSuggestModal(this.app, lib, (selected) => {
+          editor.replaceSelection(selected.smiles);
+        }).open();
       }
     });
     this.addCommand({
@@ -28193,18 +28786,20 @@ var ChemEditUniversalPlugin = class extends import_obsidian3.Plugin {
       this.renderChemicalProperties(source, el);
     });
     this.registerMarkdownCodeBlockProcessor("chem-gallery", async (source, el, ctx) => {
-      const gallery = new UniversalGalleryRenderer(this);
-      await gallery.renderChemGallery(source, el, ctx);
+      const galleryRenderer = new ElnGalleryRenderer(this);
+      await galleryRenderer.renderChemGallery(source, el, ctx);
     });
     this.registerMarkdownCodeBlockProcessor("eln-gallery", async (source, el, ctx) => {
-      const gallery = new UniversalGalleryRenderer(this);
-      await gallery.renderElnGallery(source, el, ctx);
+      const galleryRenderer = new ElnGalleryRenderer(this);
+      await galleryRenderer.renderGalleryBlock(source, el, ctx);
     });
     this.registerMarkdownCodeBlockProcessor("eln", async (source, el, ctx) => {
       const container = document.createElement("div");
       el.appendChild(container);
       const elnRenderer = new SharedElnRenderer(this);
       await elnRenderer.renderElnBlock(source, container, ctx);
+      const Smi = Yr;
+      const theme = document.body.hasClass("theme-dark") ? this.settings.darkTheme : this.settings.lightTheme;
       container.querySelectorAll(".eln-structure").forEach((node) => {
         const smiles = node.getAttribute("data-smiles");
         const cssSize = node.classList.contains("scheme-size") ? 110 : 90;
@@ -28221,6 +28816,9 @@ var ChemEditUniversalPlugin = class extends import_obsidian3.Plugin {
             }
           }
         }
+        node.addEventListener("contextmenu", (e) => {
+          if (smiles) this.showChemicalContextMenu(e, smiles);
+        });
         node.addEventListener("dblclick", (e) => {
           e.stopPropagation();
           const type = node.getAttribute("data-type");
@@ -28371,6 +28969,7 @@ ${data}
           }
         }
         this.renderWithSmilesDrawer(smilesToDraw, wrapper, w, h);
+        wrapper.addEventListener("contextmenu", (e) => this.showChemicalContextMenu(e, smilesToDraw));
       } else {
         try {
           let molecule;
@@ -28379,6 +28978,7 @@ ${data}
           else molecule = oot.fromMolfile(actualData);
           wrapper.style.color = "var(--text-normal)";
           wrapper.innerHTML = this.fixSvgDarkMode(molecule.toSVG(w, h));
+          wrapper.addEventListener("contextmenu", (e) => this.showChemicalContextMenu(e, molecule.toSmiles()));
         } catch (err) {
           wrapper.innerHTML = `<span style="color: var(--text-error);">Rendering Error: ${err.message}</span>`;
         }
@@ -28412,6 +29012,7 @@ ${newData}
     });
   }
   renderChemicalProperties(source, el) {
+    var _a, _b, _c, _d;
     const cleanSource = source.trim();
     const wrapper = el.createDiv();
     wrapper.style.padding = "15px";
@@ -28445,6 +29046,13 @@ ${newData}
       const mw = Number(mwVal).toFixed(4);
       const emVal = formula.absoluteWeight || 0;
       const exactMass = Number(emVal).toFixed(4);
+      const logp = typeof props.logP === "number" ? props.logP.toFixed(2) : "0.00";
+      const logs = typeof props.logS === "number" ? props.logS.toFixed(2) : "0.00";
+      const psa = typeof props.polarSurfaceArea === "number" ? props.polarSurfaceArea.toFixed(1) : "0.0";
+      const hbd = (_a = props.donorCount) != null ? _a : 0;
+      const hba = (_b = props.acceptorCount) != null ? _b : 0;
+      const rotBonds = (_c = props.rotatableBondCount) != null ? _c : 0;
+      const stereo = (_d = props.stereoCenterCount) != null ? _d : 0;
       const statsEl = wrapper.createDiv();
       statsEl.style.fontSize = "0.9em";
       statsEl.innerHTML = `
@@ -28452,6 +29060,11 @@ ${newData}
                 <table style="width: 100%; text-align: left; border: none; font-size: 0.9em;">
                     <tr><td style="color: var(--text-muted);">Molecular Weight:</td><td><b>${mw}</b> g/mol</td></tr>
                     <tr><td style="color: var(--text-muted);">Exact Mass:</td><td><b>${exactMass}</b> Da</td></tr>
+                    <tr><td style="color: var(--text-muted);">LogP (Lipophilicity):</td><td><b>${logp}</b></td></tr>
+                    <tr><td style="color: var(--text-muted);">LogS (Solubility):</td><td><b>${logs}</b></td></tr>
+                    <tr><td style="color: var(--text-muted);">Polar Surface Area:</td><td><b>${psa}</b> \xC5\xB2</td></tr>
+                    <tr><td style="color: var(--text-muted);">H-Donors / Acceptors:</td><td><b>${hbd} / ${hba}</b></td></tr>
+                    <tr><td style="color: var(--text-muted);">Rot. Bonds / Stereocenters:</td><td><b>${rotBonds} / ${stereo}</b></td></tr>
                 </table>
             `;
     } catch (e) {
@@ -28463,263 +29076,6 @@ ${newData}
   }
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-};
-var UniversalGalleryRenderer = class {
-  constructor(plugin) {
-    __publicField(this, "plugin");
-    this.plugin = plugin;
-  }
-  async renderElnGallery(source, el, ctx) {
-    var _a;
-    const { parseYaml } = require("obsidian");
-    const match = source.match(/path:\s*['"]?(.*?)['"]?(?:\n|$)/);
-    const folderPath = match ? match[1].trim() : "";
-    if (!folderPath) {
-      el.createEl("div", { text: "\u26A0\uFE0F Please specify a folder path (e.g., path: Experiments/)", cls: "color-text-error" });
-      return;
-    }
-    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
-    if (!folder || !("children" in folder)) {
-      el.createEl("div", { text: `\u26A0\uFE0F Folder not found: ${folderPath}`, cls: "color-text-error" });
-      return;
-    }
-    const files = folder.children.filter((f) => f instanceof import_obsidian3.TFile && f.extension.toLowerCase() === "md");
-    const header = el.createDiv({ attr: { style: "display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;" } });
-    const countLabel = header.createDiv({ text: `Loading...`, attr: { style: "font-size: 13px; color: var(--text-muted); font-weight: 500;" } });
-    const searchInput = header.createEl("input", { type: "search", placeholder: "Search experiments...", attr: { style: "width: 250px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--background-modifier-border); background: var(--background-primary);" } });
-    const container = el.createDiv({ cls: "chem-gallery-container" });
-    container.style.display = "grid";
-    container.style.gridTemplateColumns = "repeat(auto-fill, minmax(140px, 1fr))";
-    container.style.gap = "15px";
-    container.style.padding = "5px 0";
-    const cards = [];
-    let renderCount = 0;
-    for (const file of files) {
-      const content = await this.plugin.app.vault.cachedRead(file);
-      const blockMatch = content.match(/```eln\s*\n([\s\S]*?)\n```/);
-      if (!blockMatch) continue;
-      try {
-        const yamlObj = parseYaml(blockMatch[1]);
-        let dataToRender = "";
-        if (yamlObj.products && yamlObj.products.length > 0 && typeof yamlObj.products[0].smiles === "string" && yamlObj.products[0].smiles.trim()) {
-          dataToRender = yamlObj.products[0].smiles.trim();
-        } else if (yamlObj.reactants && yamlObj.reactants.length > 0 && typeof yamlObj.reactants[0].smiles === "string" && yamlObj.reactants[0].smiles.trim()) {
-          dataToRender = yamlObj.reactants[0].smiles.trim();
-        }
-        const searchableText = `${file.name.toLowerCase()} ${((_a = yamlObj.code) == null ? void 0 : _a.toLowerCase()) || ""}`;
-        renderCount++;
-        const card = container.createDiv({ cls: "chem-gallery-card" });
-        card.style.border = "1px solid var(--background-modifier-border)";
-        card.style.borderRadius = "8px";
-        card.style.padding = "10px";
-        card.style.display = "flex";
-        card.style.flexDirection = "column";
-        card.style.alignItems = "center";
-        card.style.backgroundColor = "var(--background-primary)";
-        card.style.cursor = "pointer";
-        card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
-        const previewWrapper = card.createDiv();
-        previewWrapper.style.width = "100%";
-        previewWrapper.style.height = "100px";
-        previewWrapper.style.display = "flex";
-        previewWrapper.style.justifyContent = "center";
-        previewWrapper.style.alignItems = "center";
-        const label = card.createDiv();
-        label.textContent = yamlObj.code || file.basename;
-        label.style.fontSize = "12px";
-        label.style.marginTop = "10px";
-        label.style.textAlign = "center";
-        label.style.wordBreak = "break-word";
-        label.style.color = "var(--text-normal)";
-        label.style.fontWeight = "500";
-        cards.push({ el: card, text: searchableText });
-        card.onclick = () => this.plugin.app.workspace.getLeaf(false).openFile(file);
-        if (!dataToRender) {
-          previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">No Structure</span>`;
-          continue;
-        }
-        previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">\u23F3</span>`;
-        requestAnimationFrame(async () => {
-          try {
-            const previewEl = await this.plugin.api.renderStructure(dataToRender, 120, 100);
-            previewWrapper.empty();
-            if (previewEl) {
-              previewEl.style.maxWidth = "100%";
-              previewEl.style.maxHeight = "100%";
-              previewWrapper.appendChild(previewEl);
-            } else {
-              previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
-            }
-          } catch (e) {
-            previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
-          }
-        });
-      } catch (e) {
-      }
-    }
-    countLabel.textContent = `${renderCount} experiments`;
-    searchInput.addEventListener("input", (e) => {
-      const query = e.target.value.toLowerCase();
-      let visibleCount = 0;
-      cards.forEach((c) => {
-        if (c.text.includes(query)) {
-          c.el.style.display = "flex";
-          visibleCount++;
-        } else {
-          c.el.style.display = "none";
-        }
-      });
-      countLabel.textContent = `${visibleCount} / ${renderCount} experiments`;
-    });
-  }
-  async renderChemGallery(source, el, ctx) {
-    const { parseYaml } = require("obsidian");
-    const match = source.match(/path:\s*['"]?(.*?)['"]?(?:\n|$)/);
-    const folderPath = match ? match[1].trim() : "";
-    if (!folderPath) {
-      el.createEl("div", { text: "\u26A0\uFE0F Please specify a folder path", cls: "color-text-error" });
-      return;
-    }
-    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
-    if (!folder || !("children" in folder)) {
-      el.createEl("div", { text: `\u26A0\uFE0F Folder not found`, cls: "color-text-error" });
-      return;
-    }
-    const files = folder.children.filter((f) => f instanceof import_obsidian3.TFile && f.extension.toLowerCase() === "md");
-    const container = el.createDiv({ cls: "chem-gallery-container" });
-    container.style.display = "grid";
-    container.style.gridTemplateColumns = "repeat(auto-fill, minmax(140px, 1fr))";
-    container.style.gap = "15px";
-    container.style.padding = "5px 0";
-    for (const file of files) {
-      const content = await this.plugin.app.vault.cachedRead(file);
-      const blockMatch = content.match(/```(smiles|mol)\s*\n([\s\S]*?)\n```/);
-      if (!blockMatch) continue;
-      const dataToRender = blockMatch[2].trim();
-      if (!dataToRender) continue;
-      const card = container.createDiv({ cls: "chem-gallery-card" });
-      card.style.border = "1px solid var(--background-modifier-border)";
-      card.style.borderRadius = "8px";
-      card.style.padding = "10px";
-      card.style.display = "flex";
-      card.style.flexDirection = "column";
-      card.style.alignItems = "center";
-      card.style.backgroundColor = "var(--background-primary)";
-      card.style.cursor = "pointer";
-      card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
-      const previewWrapper = card.createDiv();
-      previewWrapper.style.width = "100%";
-      previewWrapper.style.height = "100px";
-      previewWrapper.style.display = "flex";
-      previewWrapper.style.justifyContent = "center";
-      previewWrapper.style.alignItems = "center";
-      previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">\u23F3</span>`;
-      const label = card.createDiv();
-      label.textContent = file.basename;
-      label.style.fontSize = "12px";
-      label.style.marginTop = "10px";
-      label.style.textAlign = "center";
-      label.style.wordBreak = "break-word";
-      label.style.color = "var(--text-normal)";
-      label.style.fontWeight = "500";
-      card.onclick = () => this.plugin.app.workspace.getLeaf(false).openFile(file);
-      requestAnimationFrame(async () => {
-        try {
-          const previewEl = await this.plugin.api.renderStructure(dataToRender, 120, 100);
-          previewWrapper.empty();
-          if (previewEl) {
-            previewEl.style.maxWidth = "100%";
-            previewEl.style.maxHeight = "100%";
-            previewWrapper.appendChild(previewEl);
-          } else {
-            previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
-          }
-        } catch (e) {
-          previewWrapper.innerHTML = `<span class="color-text-muted" style="font-size:12px;">Invalid</span>`;
-        }
-      });
-    }
-  }
-};
-async function createNewElnExperiment(app, code, folderPath = "", sectionsString = "TLC, LCMS, NMR") {
-  const { stringifyYaml } = require("obsidian");
-  const baseCode = code.trim() || "Experiment";
-  const defaultData = { code: baseCode, status: "Planned", solvent: "", temperature: "rt", duration: "12 h", reactants: [], products: [] };
-  const yaml = stringifyYaml(defaultData);
-  const dateStr = window.moment().format("YYYY-MM-DD");
-  const sections = sectionsString.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-  let analyticalDataStr = "";
-  sections.forEach((sec) => analyticalDataStr += `- **${sec}:**
-`);
-  const template = `---
-tags: [experiment]
-date: ${dateStr}
----
-
-\`\`\`eln
-${yaml}
-\`\`\`
-
-## \u{1F4DD} Procedure & Observations
-1. Add reactant A to the flask...
-2. Stir at room temperature...
-3. 
-
-## \u{1F52C} Analytical Data
-${analyticalDataStr}`;
-  let safeCode = baseCode.replace(/[/\\?%*:|"<>]/g, "-");
-  let path = folderPath && folderPath !== "/" ? `${folderPath}/${safeCode}.md` : `${safeCode}.md`;
-  let finalPath = path;
-  let counter = 1;
-  while (app.vault.getAbstractFileByPath(finalPath)) {
-    finalPath = folderPath && folderPath !== "/" ? `${folderPath}/${safeCode}-${counter}.md` : `${safeCode}-${counter}.md`;
-    counter++;
-  }
-  try {
-    const newFile = await app.vault.create(finalPath, template);
-    app.workspace.getLeaf(false).openFile(newFile);
-    new import_obsidian3.Notice(`Created new experiment: ${newFile.basename}`);
-  } catch (e) {
-    new import_obsidian3.Notice(`Error creating experiment: ${e.message}`);
-  }
-}
-var CreateExperimentModal = class extends import_obsidian3.Modal {
-  constructor(app, defaultCode, onSubmit) {
-    super(app);
-    __publicField(this, "onSubmit");
-    __publicField(this, "code");
-    this.onSubmit = onSubmit;
-    this.code = defaultCode;
-  }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.createEl("h3", { text: "Create New Experiment" });
-    const wrap = contentEl.createDiv({ attr: { style: "margin-bottom: 20px;" } });
-    wrap.createEl("div", { text: "Experiment Code (e.g. EXP-001)", cls: "color-text-muted", attr: { style: "font-size:12px; margin-bottom:5px;" } });
-    const input = wrap.createEl("input", { type: "text", value: this.code, attr: { style: "width:100%;" } });
-    input.onchange = (e) => this.code = e.target.value;
-    input.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") {
-        this.onSubmit(this.code.trim());
-        this.close();
-      }
-    });
-    const btnRow = contentEl.createDiv({ attr: { style: "display:flex; justify-content:flex-end; gap: 10px;" } });
-    const cancel = btnRow.createEl("button", { text: "Cancel" });
-    cancel.onclick = () => this.close();
-    const create = btnRow.createEl("button", { text: "Create", cls: "mod-cta" });
-    create.onclick = () => {
-      this.onSubmit(this.code.trim());
-      this.close();
-    };
-    setTimeout(() => {
-      input.focus();
-      input.select();
-    }, 50);
-  }
-  onClose() {
-    this.contentEl.empty();
   }
 };
 var PropertyPromptModal = class extends import_obsidian3.Modal {
@@ -28769,7 +29125,12 @@ var ChemEditUniversalSettingTab = class extends import_obsidian3.PluginSettingTa
     const statusEl = containerEl.createEl("div", { cls: "setting-item-description" });
     statusEl.innerHTML = `<span style="color:var(--text-success); font-size:1.1em">\u2705 <b>OpenChemLib Backend Active</b></span>`;
     containerEl.createEl("br");
-    containerEl.createEl("h3", { text: "Fume Hood Utilities" });
+    containerEl.createEl("h3", { text: "\u{1F4DA} Compound Library" });
+    new import_obsidian3.Setting(containerEl).setName("Compound Library File Path").setDesc("Optional: Point to a .md file (e.g. Meta/Compounds.md) that contains markdown tables or lists of your common chemicals. Used for auto-filling the ELN and the Library command.").addText((text) => text.setPlaceholder("Meta/Compounds.md").setValue(this.plugin.settings.libraryFilePath).onChange(async (v) => {
+      this.plugin.settings.libraryFilePath = v;
+      await this.plugin.saveSettings();
+    }));
+    containerEl.createEl("h3", { text: "\u{1F52C} Fume Hood & ELN Utilities" });
     new import_obsidian3.Setting(containerEl).setName("Show Media Ribbon Icons").setDesc('Turn this on to display the "Take Photo" and "TLC Plate" icons in your left sidebar ribbon.').addToggle((toggle) => toggle.setValue(this.plugin.settings.showMediaRibbonIcons).onChange(async (v) => {
       this.plugin.settings.showMediaRibbonIcons = v;
       await this.plugin.saveSettings();
@@ -28784,7 +29145,7 @@ var ChemEditUniversalSettingTab = class extends import_obsidian3.PluginSettingTa
       await this.plugin.saveSettings();
       this.plugin.refreshRibbonIcons();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Default ELN Directory").setDesc("Folder where new ELN experiments will be saved by default (e.g. Experiments/). Leave blank to save in the current active folder.").addText((text) => text.setPlaceholder("ELN").setValue(this.plugin.settings.defaultElnDirectory).onChange(async (v) => {
+    new import_obsidian3.Setting(containerEl).setName("Default ELN Directory").setDesc("Folder where new ELN experiments will be saved by default (e.g. Experiments/). Leave blank to save in the current active folder.").addText((text) => text.setPlaceholder("Experiments/").setValue(this.plugin.settings.defaultElnDirectory).onChange(async (v) => {
       this.plugin.settings.defaultElnDirectory = v;
       await this.plugin.saveSettings();
     }));
@@ -28792,8 +29153,42 @@ var ChemEditUniversalSettingTab = class extends import_obsidian3.PluginSettingTa
       this.plugin.settings.defaultExpPrefix = v;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Analytical Sections").setDesc("Comma-separated list of sections to auto-generate inside new experiments.").addText((text) => text.setPlaceholder("TLC, LCMS, NMR, GSMS").setValue(this.plugin.settings.analyticalSections).onChange(async (v) => {
+    new import_obsidian3.Setting(containerEl).setName("Analytical Sections").setDesc("Comma-separated list of sections to auto-generate inside new experiments.").addText((text) => text.setPlaceholder("TLC, LCMS, NMR").setValue(this.plugin.settings.analyticalSections).onChange(async (v) => {
       this.plugin.settings.analyticalSections = v;
+      await this.plugin.saveSettings();
+    }));
+    containerEl.createEl("h3", { text: "\u{1F5B1}\uFE0F Context Menu (Right-Click)" });
+    containerEl.createEl("div", { cls: "setting-item-description", text: "Customize the links in the right-click menu for SMILES blocks. Use {{smiles}} to inject the structure." }).style.marginBottom = "10px";
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 1 Name").addText((text) => text.setValue(this.plugin.settings.contextUrl1Name).onChange(async (v) => {
+      this.plugin.settings.contextUrl1Name = v;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 1 URL").addText((text) => text.setValue(this.plugin.settings.contextUrl1).onChange(async (v) => {
+      this.plugin.settings.contextUrl1 = v;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 2 Name").addText((text) => text.setValue(this.plugin.settings.contextUrl2Name).onChange(async (v) => {
+      this.plugin.settings.contextUrl2Name = v;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 2 URL").addText((text) => text.setValue(this.plugin.settings.contextUrl2).onChange(async (v) => {
+      this.plugin.settings.contextUrl2 = v;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 3 Name").addText((text) => text.setValue(this.plugin.settings.contextUrl3Name).onChange(async (v) => {
+      this.plugin.settings.contextUrl3Name = v;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 3 URL").addText((text) => text.setValue(this.plugin.settings.contextUrl3).onChange(async (v) => {
+      this.plugin.settings.contextUrl3 = v;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 4 Name").addText((text) => text.setValue(this.plugin.settings.contextUrl4Name).onChange(async (v) => {
+      this.plugin.settings.contextUrl4Name = v;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Custom Link 4 URL").addText((text) => text.setValue(this.plugin.settings.contextUrl4).onChange(async (v) => {
+      this.plugin.settings.contextUrl4 = v;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("br");
