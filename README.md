@@ -1,8 +1,6 @@
 # ChemEdit Universal
 
-ChemEdit Universal is a lightweight, cross-platform chemistry engine plugin for Obsidian. Powered by [OpenChemLib](https://github.com/Actelion/openchemlib), it allows you to draw, edit, and visualize chemical structures directly in your notes.
-
-Because it does not rely on web iframes, React, or Wasm, it is fast and **works on both Desktop and Obsidian Mobile (iOS/Android).**
+A lightweight chemical structure editor for Obsidian. Works on both Desktop and Obsidian Mobile (iOS/Android).
 
 ChemEdit universal mobile demo:
 
@@ -20,6 +18,7 @@ ChemEdit universal mobile demo:
 * **Two rendering engines** — Choose between SmilesDrawer and OpenChemLib.
 
 1.0.5
+
 * **Interactive ELN Editor:** Added a floating action bar to ELN blocks. You can now visually edit Reactants, Products, Equivalents, and Procedures via a clean UI without touching Markdown YAML!
 * **🧪 Auto-Name Structures:** Added a smart "Auto-Name" button inside the ELN editor that automatically fetches IUPAC/Common names for your drawn structures via PubChem/CACTUS.
 * **📸 Fume Hood Utilities (Media Ribbon):** Take Lab Photos or upload TLC plates directly into your notes. 
@@ -34,7 +33,6 @@ ChemEdit universal mobile demo:
 - **📋 Smart Paste:** Paste raw SMILES or MOL strings into Obsidian, and the plugin can automatically wrap them in code blocks for instant rendering.
 
 ## 🚀 How to Use
-
 
 ### 1. Drawing a New Molecule
 

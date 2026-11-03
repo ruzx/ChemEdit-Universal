@@ -1,21 +1,142 @@
-/* ChemEdit Universal - Dark Mode Support */
+.ce-root{--ce-bg:var(--background-primary,#fff);--ce-panel:var(--background-secondary,#f3f3f5);--ce-ink:var(--text-normal,#1d1d1f);
+--ce-muted:var(--text-muted,#6e6e73);--ce-border:var(--background-modifier-border,#d6d6db);--ce-accent:var(--interactive-accent,#3d6fe0);
+--ce-hover:var(--background-modifier-hover,rgba(0,0,0,.06));--ce-tri:#d23b2f;--ce-btn:30px;
+display:flex;flex-direction:column;height:100%;min-height:360px;background:var(--ce-bg);color:var(--ce-ink);font:13px/1.3 var(--font-interface,system-ui,-apple-system,"Segoe UI",sans-serif);outline:none;position:relative;user-select:none;-webkit-user-select:none;overflow:hidden}
+.ce-root *{box-sizing:border-box}
+.ce-top,.ce-sub{display:flex;align-items:center;gap:1px;padding:3px 6px;background:var(--ce-panel);border-bottom:1px solid var(--ce-border);overflow-x:auto;overflow-y:hidden;scrollbar-width:none;flex:none}
+.ce-top::-webkit-scrollbar,.ce-sub::-webkit-scrollbar{display:none}
+.ce-sub{padding:2px 6px;background:var(--ce-bg)}
+.ce-sep{flex:none;width:1px;height:20px;background:var(--ce-border);margin:0 5px}
+.ce-spacer{flex:1;min-width:6px}
+.ce-btn{position:relative;flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:var(--ce-btn);height:var(--ce-btn);padding:0 5px;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--ce-ink);cursor:pointer;font:inherit;box-shadow:none;gap:4px}
+.ce-btn:hover{background:var(--ce-hover);border-color:var(--ce-border)}
+.ce-btn.ce-on{background:var(--ce-bg);border-color:var(--ce-accent);box-shadow:inset 0 0 0 1px var(--ce-accent);color:var(--ce-accent)}
+.ce-btn:disabled{opacity:.35;cursor:default}
+.ce-btn svg{flex:none;pointer-events:none}
+.ce-tri{position:absolute;right:1px;bottom:1px;width:0;height:0;border-left:6px solid transparent;border-bottom:6px solid var(--ce-tri);cursor:pointer}
+.ce-elbtn{font-weight:600;min-width:28px;font-size:13px}
+.ce-hint{color:var(--ce-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:4px;min-width:0}
+.ce-import{flex:0 1 170px;min-width:90px;height:26px;padding:0 8px;border:1px solid var(--ce-border);border-radius:4px;background:var(--ce-bg);color:var(--ce-ink);font:inherit;transition:flex-basis .15s}
+.ce-import:focus{flex-basis:300px;outline:1px solid var(--ce-accent)}
+.ce-main{flex:1;display:flex;min-height:0;position:relative}
+.ce-el-N{color:#2349d9}.ce-el-O{color:#e0261b}.ce-el-S{color:#b39200}.ce-el-P{color:#e06c00}.ce-el-F,.ce-el-Cl{color:#1f9e3a}.ce-el-Br{color:#a42a2a}.ce-el-I{color:#8a1fa0}
+.ce-canvas-wrap{flex:1;position:relative;overflow:hidden;background:var(--ce-bg);min-width:0}
+.ce-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;color:var(--ce-ink);touch-action:none;cursor:crosshair}
+.ce-canvas.ce-tool-select{cursor:default}.ce-canvas.ce-panning{cursor:grabbing}.ce-canvas.ce-tool-text{cursor:text}
+.ce-analysis{flex:none;width:0;overflow:hidden auto;border-left:0 solid var(--ce-border);background:var(--ce-panel);transition:width .15s;font-size:12px}
+.ce-analysis.ce-open{width:250px;border-left-width:1px;padding:8px 10px}
+.ce-an-h{font-weight:700;margin-bottom:6px;font-size:13px}.ce-an-h span{font-weight:400;color:var(--ce-muted);font-size:11px;margin-left:4px}
+.ce-an-s{font-weight:600;margin:10px 0 3px;color:var(--ce-muted);text-transform:uppercase;font-size:10px;letter-spacing:.04em}
+.ce-an-t{width:100%;border-collapse:collapse}.ce-an-t td{padding:2px 0;border-bottom:1px solid var(--ce-border);vertical-align:top}
+.ce-an-t td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--font-monospace,ui-monospace,monospace);font-size:11.5px}
+.ce-an-copy{margin-top:10px;width:100%;border-color:var(--ce-border)}
+.ce-an-empty{color:var(--ce-muted)}
+.ce-status{display:flex;gap:14px;align-items:center;padding:3px 10px;border-top:1px solid var(--ce-border);background:var(--ce-panel);color:var(--ce-muted);font-size:12px;white-space:nowrap;overflow:hidden;min-height:24px;flex:none}
+.ce-status b{color:var(--ce-ink);font-weight:600}
+.ce-status .ce-smiles{overflow:hidden;text-overflow:ellipsis;cursor:copy;font-family:var(--font-monospace,ui-monospace,monospace);flex:1;min-width:0}
+.ce-pop{position:absolute;z-index:50;background:var(--ce-bg);border:1px solid var(--ce-border);border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:6px}
+.ce-flyout{display:grid;grid-template-columns:repeat(2,auto);gap:2px}
+.ce-flyout .ce-btn{justify-content:flex-start;padding:0 8px 0 4px}
+.ce-fly-l{font-size:12px;white-space:nowrap}
+.ce-flyout-tmpl{grid-template-columns:repeat(4,78px)}
+.ce-flyout-tmpl .ce-btn{flex-direction:column;height:auto;padding:3px;justify-content:center}
+.ce-thumb{display:flex;align-items:center;justify-content:center;height:46px;width:70px;color:var(--ce-ink)}
+.ce-thumb svg{max-width:100%;max-height:100%}
+.ce-thumb-l{font-size:10px;color:var(--ce-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px}
+.ce-menu{position:absolute;z-index:70;min-width:190px;background:var(--ce-bg);border:1px solid var(--ce-border);border-radius:5px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:3px;font-size:13px}
+.ce-menu-item{display:flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:3px;cursor:default;white-space:nowrap}
+.ce-menu-item:hover{background:var(--ce-accent);color:var(--text-on-accent,#fff)}
+.ce-menu-item.ce-disabled{opacity:.4;pointer-events:none}
+.ce-menu-item.ce-danger:not(:hover){color:#c9302c}
+.ce-menu-check{width:16px;text-align:center;font-size:12px}
+.ce-menu-label{flex:1}
+.ce-menu-sc{color:inherit;opacity:.55;font-size:11px;margin-left:18px}
+.ce-menu-sep{height:1px;background:var(--ce-border);margin:3px 4px}
+.ce-ptable{display:grid;grid-template-columns:repeat(18,26px);grid-auto-rows:24px;gap:2px}
+.ce-ptable button{padding:0;font-size:11px;font-weight:600;border:1px solid var(--ce-border);border-radius:3px;background:var(--ce-panel);color:var(--ce-ink);cursor:pointer;min-width:0;height:24px;box-shadow:none}
+.ce-ptable button:hover{background:var(--ce-accent);color:#fff}
+.ce-help{max-width:540px;max-height:70%;overflow:auto;font-size:12px;line-height:1.55}
+.ce-help h4{margin:6px 0 2px;font-size:12px}
+.ce-help kbd{display:inline-block;padding:0 4px;border:1px solid var(--ce-border);border-radius:3px;background:var(--ce-panel);font:11px var(--font-monospace,monospace)}
+.ce-label-pop input{width:220px;height:28px;padding:0 8px;border:1px solid var(--ce-border);border-radius:4px;background:var(--ce-bg);color:var(--ce-ink)}
+.ce-chips{display:flex;flex-wrap:wrap;gap:3px;max-width:250px;margin-top:6px}
+.ce-chips button{font-size:11px;padding:1px 6px;height:auto;border:1px solid var(--ce-border);border-radius:10px;background:var(--ce-panel);color:var(--ce-ink);cursor:pointer;box-shadow:none}
+.ce-textedit{position:absolute;z-index:40;min-width:60px;padding:2px 4px;font:14px Arial,sans-serif;border:1px solid var(--ce-accent);border-radius:3px;background:var(--ce-bg);color:var(--ce-ink);resize:none;outline:none}
+.ce-toast{position:absolute;left:50%;bottom:34px;transform:translateX(-50%);background:var(--ce-ink);color:var(--ce-bg);padding:5px 12px;border-radius:14px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:80}
+.ce-toast.ce-show{opacity:.92}
+/* touch / narrow screens */
+@media (pointer:coarse){.ce-root{--ce-btn:40px}.ce-menu-item{padding:10px 14px 10px 6px;font-size:15px}.ce-elbtn{min-width:38px;font-size:15px}.ce-tri{border-left-width:9px;border-bottom-width:9px}}
+@media (max-width:640px){.ce-hide-narrow,.ce-hint{display:none}.ce-import{flex-basis:110px}.ce-analysis.ce-open{position:absolute;left:0;right:0;bottom:0;width:auto;max-height:55%;border-left:0;border-top:1px solid var(--ce-border);z-index:30}.ce-status{gap:8px}.ce-flyout-tmpl{grid-template-columns:repeat(3,78px)}}
 
-/* 1. Force the Editor to have a white canvas so black lines are always visible */
-.chem-editor-container {
-    background-color: #ffffff;
-    border-radius: 4px;
-    box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
-}
-
-/* 2. Smart Inversion for Rendered Structures in Dark Mode */
-.chem-svg-wrapper svg {
-    background-color: transparent !important;
-}
-
-.theme-dark .chem-svg-wrapper svg {
-    /* 
-       This perfectly inverts black lines to white, 
-       but rotates the colors back so Oxygen stays Red and Nitrogen stays Blue! 
-    */
-    filter: invert(0.88) hue-rotate(180deg) brightness(1.2) contrast(1.2);
-}
+/* ---- ChemEdit plugin chrome ---- */
+.modal.chemedit-modal{width:min(1240px,95vw);height:min(840px,92vh);max-width:none;max-height:none;display:flex;flex-direction:column;padding:16px 16px 12px}
+.chemedit-modal .modal-content{flex:1;display:flex;min-height:0;padding:0;overflow:hidden}
+.chemedit-modal-body{display:flex;flex-direction:column;flex:1;min-height:0;width:100%}
+.chemedit-modal-editor{flex:1;min-height:0;border:1px solid var(--background-modifier-border);border-radius:8px;overflow:hidden}
+.chemedit-modal-editor>.ce-root,.chemedit-fileview>.ce-root{height:100%}
+.chemedit-modal-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-top:10px}
+.chemedit-modal-buttons{display:flex;gap:8px}
+.chemedit-modal-hint{color:var(--text-muted);font-size:var(--font-ui-smaller)}
+.chemedit-block{position:relative;display:flex;flex-direction:column;align-items:center;padding:6px 0;border-radius:8px}
+.chemedit-block:hover{background:var(--background-secondary-alt,transparent)}
+.chemedit-figure{max-width:100%;cursor:default;line-height:0}
+.chemedit-figure svg{max-width:100%;height:auto;display:block}
+.chemedit-toolbar{position:absolute;top:4px;right:4px;display:flex;gap:2px;opacity:0;transition:opacity .15s;background:var(--background-primary);border-radius:6px;box-shadow:var(--shadow-s)}
+.chemedit-block:hover .chemedit-toolbar{opacity:1}
+.chemedit-caption{color:var(--text-muted);font-size:var(--font-ui-small);margin-top:2px}
+.chemedit-inline{display:inline-block;vertical-align:middle;line-height:0;cursor:default}
+.chemedit-inline svg{height:auto;display:inline-block;vertical-align:middle}
+.chemedit-error{color:var(--text-error);background:var(--background-secondary);padding:8px 12px;border-radius:6px;font-size:var(--font-ui-small);cursor:pointer}
+.chemedit-fileview{padding:0!important;overflow:hidden}
+.chemedit-preview{line-height:0}
+.chemedit-preview svg{max-width:100%;height:auto}
+.chemedit-embed{display:block}
+.is-mobile .modal.chemedit-modal{width:100vw;height:100vh;padding:8px}
+/* ---- ELN ---- */
+.ce-eln{border:1px solid var(--background-modifier-border);border-radius:10px;padding:12px 14px;margin:6px 0;background:var(--background-primary);font-size:var(--font-ui-small)}
+.ce-eln-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ce-eln-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ce-eln-code{font-size:1.25em;font-weight:700}
+.ce-eln-sub{color:var(--text-muted)}
+.ce-eln-meta{display:flex;gap:14px;color:var(--text-muted);font-size:var(--font-ui-smaller);margin-top:2px}
+.ce-eln-status{border-radius:12px!important;padding:2px 12px!important;height:auto!important;font-size:var(--font-ui-smaller)!important;font-weight:600;box-shadow:none!important;border:1px solid currentColor!important;background:transparent!important}
+.ce-st-planned{color:var(--color-blue,#3d6fe0)!important}.ce-st-running{color:var(--color-orange,#d97a00)!important}.ce-st-completed{color:var(--color-green,#2e9e4f)!important}.ce-st-failed{color:var(--color-red,#d23b2f)!important}.ce-st-onhold{color:var(--text-muted)!important}
+.ce-eln-scheme{display:flex;justify-content:center;padding:10px 0 4px;min-height:40px;cursor:default;line-height:0;overflow-x:auto}
+.ce-eln-scheme svg{max-width:100%;height:auto}
+.ce-eln-empty{color:var(--text-faint);font-style:italic;text-align:center;padding:8px;line-height:1.4}
+.ce-eln-cond{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.ce-eln-chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--background-modifier-border);border-radius:12px;padding:1px 9px;background:var(--background-secondary)}
+.ce-eln-chip-k{color:var(--text-muted);font-size:var(--font-ui-smaller)}
+.ce-eln-calc{color:var(--text-accent);background:transparent}
+.ce-eln-tablewrap{overflow-x:auto}
+.ce-eln-table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-variant-numeric:tabular-nums}
+.ce-eln-table th{text-align:left;font-weight:600;color:var(--text-muted);font-size:var(--font-ui-smaller);border-bottom:2px solid var(--background-modifier-border);padding:4px 6px;white-space:nowrap}
+.ce-eln-table td{padding:3px 6px;border-bottom:1px solid var(--background-modifier-border);vertical-align:middle;white-space:nowrap}
+.ce-eln-thumb{width:70px;line-height:0;text-align:center;color:var(--text-faint)}
+.ce-eln-thumb svg{max-width:70px;height:auto}
+.ce-eln-name{font-weight:600;white-space:normal}
+.ce-eln-formula{font-size:var(--font-ui-smaller);color:var(--text-muted)}
+.ce-limiting{background:color-mix(in srgb,var(--interactive-accent) 7%,transparent)}
+.ce-role-solvent td,.ce-role-catalyst .ce-eln-name{color:var(--text-muted)}
+.ce-eln-editable{cursor:text;border-radius:4px}
+.ce-eln-editable:hover{background:var(--background-modifier-hover)}
+.ce-eln-input{color:var(--text-accent)}
+.ce-eln-cellinput{width:90px;height:24px;padding:0 4px;font-size:inherit}
+.ce-eln-yield{font-weight:700;font-size:1.1em}
+.ce-good{color:var(--color-green,#2e9e4f)}.ce-mid{color:var(--color-orange,#d97a00)}.ce-bad{color:var(--color-red,#d23b2f)}
+.ce-eln-act{width:28px;text-align:right}
+.ce-eln-warn{color:var(--text-warning,#c27c00);font-size:var(--font-ui-smaller);margin:4px 0}
+.ce-eln-bar{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.ce-eln-bar button{font-size:var(--font-ui-smaller)}
+/* ---- SDF gallery ---- */
+.chemedit-sdfview{padding:12px!important;overflow:auto}
+.ce-sdf-head{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+.ce-sdf-head input{flex:1;max-width:320px}
+.ce-sdf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.ce-sdf-card{border:1px solid var(--background-modifier-border);border-radius:8px;padding:8px;background:var(--background-primary);cursor:default}
+.ce-sdf-card:hover{border-color:var(--interactive-accent)}
+.ce-sdf-fig{display:flex;justify-content:center;line-height:0;min-height:80px}
+.ce-sdf-fig svg{max-width:100%;height:auto}
+.ce-sdf-name{font-weight:600;margin-top:4px;word-break:break-word}
+.ce-sdf-fields{font-size:var(--font-ui-smaller);color:var(--text-muted);word-break:break-all}
+@media (max-width:640px){.ce-eln{padding:10px 8px}.ce-eln-thumb{width:52px}.ce-eln-thumb svg{max-width:52px}}

@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "types/assets.d.ts", "types/offline/obsidian-shim.d.ts"]
+}
