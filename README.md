@@ -12,8 +12,11 @@ ChemEdit universal mobile demo:
 + Cleaner interface (should be more convenient on mobile devices)
 + Canvas support (optional in settings)
 
-- Some database related features from the previous version will be added to the next version.
+- Some database/ELN related features from the previous version will be added to the next version.
 
+New editor:
+
+<img width="1566" height="1043" alt="image" src="https://github.com/user-attachments/assets/9bba3978-1e72-4c6f-9de2-f0877989ff5f" />
 
   
 
