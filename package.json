@@ -1,6 +1,6 @@
 {
   "name": "chemistry-universal",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Draw, edit, and visualize chemical structures (SMILES, MOL) offline on Desktop and Mobile.",
   "main": "main.js",
   "scripts": {
