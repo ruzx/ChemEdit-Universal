@@ -88,7 +88,7 @@ export class ChemEditSettingTab extends PluginSettingTab {
     new Setting(el).setName("SVG folder").setDesc("Where SVG structure files are created.")
       .addText((t) => t.setValue(s.svgFolder).onChange(async (v) => { s.svgFolder = v; await save(); }));
     new Setting(el).setName("SVG ink colour").setDesc("'black' for publication-style files; 'currentColor' follows the theme when embedded inline.")
-      .addDropdown((d) => d.addOptions({ black: "Black", currentColor: "Theme (currentColor)" }).setValue(s.svgInk).onChange(async (v) => { s.svgInk = v as any; await save(); }));
+      .addDropdown((d) => d.addOptions({ black: "Black", currentColor: "Theme (currentColor)" }).setValue(s.svgInk).onChange(async (v) => { s.svgInk = v === "black" ? "black" : "currentColor"; await save(); }));
     new Setting(el).setName("PNG export resolution").setDesc("Copy image / Save as PNG from the editor and spectra. 4× ≈ 300 dpi at journal size; 8× for posters.")
       .addDropdown((d) => d.addOptions({ "2": "2× (screen)", "4": "4× (≈300 dpi, default)", "6": "6× (≈450 dpi)", "8": "8× (≈600 dpi, posters)" }).setValue(String(s.pngScale ?? 4)).onChange(async (v) => { s.pngScale = +v; await save(); }));
     new Setting(el).setName("Online name lookup").setDesc("Resolve names (e.g. 'aspirin') via OPSIN / PubChem when typed into the editor's import box.")
@@ -100,7 +100,7 @@ export class ChemEditSettingTab extends PluginSettingTab {
     new Setting(el).setName("Photo & TLC folder").setDesc("Where lab-book photos and annotated TLC images are saved.").addText((t) => t.setValue(s.elnMediaFolder).onChange(async (v) => { s.elnMediaFolder = v.replace(/\/$/, ""); await save(); }));
     new Setting(el).setName("Photo size (px)").setDesc("Photos are downscaled to this longest side (JPEG) to keep the vault small.").addText((t) => t.setValue(String(s.photoMaxPx)).onChange(async (v) => { s.photoMaxPx = parseInt(v) || 1600; await save(); }));
     new Setting(el).setName("New experiment template").setDesc("MBook lab-book layout (General Remarks → Conclusion), its electrochemistry variant, or the 1.x layout.")
-      .addDropdown((d) => d.addOptions({ classic: "Lab book (MBook)", electro: "Lab book — electrochemistry", legacy: "Simple (1.x)" }).setValue(s.elnTemplate).onChange(async (v) => { s.elnTemplate = v as any; await save(); }));
+      .addDropdown((d) => d.addOptions({ classic: "Lab book (MBook)", electro: "Lab book — electrochemistry", legacy: "Simple (1.x)" }).setValue(s.elnTemplate).onChange(async (v) => { s.elnTemplate = v === "electro" || v === "legacy" ? v : "classic"; await save(); }));
     new Setting(el).setName("Lab workspace").setHeading();
     new Setting(el).setName("Your name").setDesc("Used for bookings, check-outs, order requests and protocol reviews.").addText((t) => t.setValue(s.userName).onChange(async (v) => { s.userName = v.trim(); await save(); }));
     for (const [id, label, def] of [["compounds", "Compounds folder", "Library"], ["inventory", "Inventory folder", "Inventory"], ["orders", "Orders folder", "Orders"], ["equipment", "Equipment folder", "Equipment"], ["protocols", "Protocols folder", "Protocols"], ["analytics", "Characterisation folder", "Characterization"]] as const)

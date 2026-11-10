@@ -300,7 +300,7 @@ export function detectSpots(plate: Img, sensitivity = 0.5, cm = contrastMap(plat
 /** Group spots into lanes (columns). Returns lane index for each spot and lane centres (x). */
 export function clusterLanes(spots: Spot[], width: number): { lane: number[]; centres: number[] } {
   const order = spots.map((s, i) => i).sort((a, b) => spots[a].x - spots[b].x);
-  const lane = new Array(spots.length).fill(0);
+  const lane = new Array<number>(spots.length).fill(0);
   const centres: number[] = [];
   let cur: number[] = [];
   const flush = () => { if (cur.length) { centres.push(cur.reduce((s, i) => s + spots[i].x, 0) / cur.length); cur.forEach((i) => (lane[i] = centres.length - 1)); cur = []; } };

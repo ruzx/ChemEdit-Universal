@@ -3,7 +3,7 @@ import type ChemEditPlugin from "./main";
 import * as chem from "../chem/index";
 import { ChemDoc } from "../chem/model";
 
-export type SaveCallback = (data: string, isFile: boolean, format?: string) => void;
+export type SaveCallback = (data: string, isFile: boolean, format?: string) => void | Promise<void>;
 
 /** Ketcher-like headless shim so older modules calling setMolecule()/getSmiles() keep working. */
 export class HeadlessShim {
@@ -14,7 +14,7 @@ export class HeadlessShim {
   async getMolfile() { return chem.docToMolfile(this.doc); }
   async getKet() { return chem.docToNative(this.doc); }
   async getRxn() { return chem.docToMolfile(this.doc); }
-  async generateImage(_data?: string, _o?: any) { return this.plugin.svgFor(this.doc, { forFile: true }); }
+  async generateImage(_data?: string, _o?: unknown) { return this.plugin.svgFor(this.doc, { forFile: true }); }
   async layout() { chem.cleanComponents(this.doc, null); }
 }
 

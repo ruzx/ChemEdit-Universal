@@ -137,7 +137,7 @@ function parseInto(doc: ChemDoc, s: string) {
         const digits = m[5].replace(/[+-]/g, "");
         charge = digits ? sign * parseInt(digits) : sign * m[5].length;
       }
-      const chiral = m[3] === "@" || m[3] === "@@" ? (m[3] as "@" | "@@") : null;
+      const chiral = m[3] === "@" || m[3] === "@@" ? m[3] : null;
       newAtom({ el: sym, charge, isotope: m[1] ? parseInt(m[1]) : undefined, hCount: hc, map: m[6] ? parseInt(m[6]) : undefined }, arom, chiral, hc);
       continue;
     }

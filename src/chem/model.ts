@@ -55,7 +55,7 @@ export function emptyDoc(): ChemDoc {
 }
 
 export function cloneDoc(d: ChemDoc): ChemDoc {
-  return JSON.parse(JSON.stringify(d));
+  return JSON.parse(JSON.stringify(d)) as ChemDoc;
 }
 
 export function newId(d: ChemDoc): number {
@@ -208,14 +208,22 @@ export function isEmpty(d: ChemDoc) {
 
 // ---------- native (lossless) serialisation ----------
 
+interface NativeAtom { e: string; x: number; y: number; c?: number; i?: number; h?: number; r?: number; l?: string; x2?: string; m?: number }
+/** [atomIndexA, atomIndexB, order, stereo?, doublePos?] */
+type NativeBond = number[];
+interface NativeDoc {
+  v?: number; a?: NativeAtom[]; b?: NativeBond[];
+  ar?: Array<[number, number, number, number, ArrowKind?]>; p?: Array<[number, number]>; t?: Array<[number, number, string]>;
+}
+
 export function toNative(d: ChemDoc): string {
   const idx = new Map<number, number>();
   d.atoms.forEach((a, i) => idx.set(a.id, i));
   const r = (v: number) => Math.round(v * 1000) / 1000;
-  const out: any = {
+  const out: NativeDoc = {
     v: 1,
     a: d.atoms.map((a) => {
-      const o: any = { e: a.el, x: r(a.x), y: r(a.y) };
+      const o: NativeAtom = { e: a.el, x: r(a.x), y: r(a.y) };
       if (a.charge) o.c = a.charge;
       if (a.isotope) o.i = a.isotope;
       if (a.hCount !== undefined) o.h = a.hCount;
@@ -226,20 +234,20 @@ export function toNative(d: ChemDoc): string {
       return o;
     }),
     b: d.bonds.map((b) => {
-      const o: any[] = [idx.get(b.a), idx.get(b.b), b.order];
+      const o: NativeBond = [idx.get(b.a) ?? 0, idx.get(b.b) ?? 0, b.order];
       if (b.stereo || b.dbl) o.push(b.stereo);
       if (b.dbl) o.push(b.dbl);
       return o;
     }),
   };
-  if (d.arrows.length) out.ar = d.arrows.map((a) => [r(a.x1), r(a.y1), r(a.x2), r(a.y2), a.kind]);
-  if (d.pluses.length) out.p = d.pluses.map((p) => [r(p.x), r(p.y)]);
-  if (d.texts.length) out.t = d.texts.map((t) => [r(t.x), r(t.y), t.text]);
+  if (d.arrows.length) out.ar = d.arrows.map((a): [number, number, number, number, ArrowKind] => [r(a.x1), r(a.y1), r(a.x2), r(a.y2), a.kind]);
+  if (d.pluses.length) out.p = d.pluses.map((p): [number, number] => [r(p.x), r(p.y)]);
+  if (d.texts.length) out.t = d.texts.map((t): [number, number, string] => [r(t.x), r(t.y), t.text]);
   return JSON.stringify(out);
 }
 
 export function fromNative(s: string): ChemDoc {
-  const o = JSON.parse(s);
+  const o = JSON.parse(s) as NativeDoc;
   const d = emptyDoc();
   const ids: number[] = [];
   for (const a of o.a ?? []) {
@@ -254,7 +262,7 @@ export function fromNative(s: string): ChemDoc {
   }
   for (const b of o.b ?? []) {
     const bd = addBond(d, ids[b[0]], ids[b[1]], b[2], (b[3] ?? 0) as BondStereo);
-    if (bd && b[4]) bd.dbl = b[4];
+    if (bd && b[4]) bd.dbl = b[4] as DoublePos;
   }
   for (const a of o.ar ?? []) d.arrows.push({ id: newId(d), x1: a[0], y1: a[1], x2: a[2], y2: a[3], kind: a[4] ?? "forward" });
   for (const p of o.p ?? []) d.pluses.push({ id: newId(d), x: p[0], y: p[1] });

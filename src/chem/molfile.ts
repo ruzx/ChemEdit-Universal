@@ -81,7 +81,7 @@ export function parseMolfile(text: string): ChemDoc {
     const a = parseInt(l.slice(0, 3)) - 1, b = parseInt(l.slice(3, 6)) - 1;
     const order = parseInt(l.slice(6, 9));
     const st = parseInt(l.slice(9, 12)) || 0;
-    const stereo = (st === 1 ? 1 : st === 6 ? 6 : st === 4 ? 4 : 0) as BondStereo;
+    const stereo: BondStereo = st === 1 ? 1 : st === 6 ? 6 : st === 4 ? 4 : 0;
     const bond = addBond(doc, ids[a], ids[b], order === 4 ? 4 : order >= 1 && order <= 3 ? order : 1, stereo);
     if (order === 4) { aromatic.add(ids[a]); aromatic.add(ids[b]); }
     void bond;

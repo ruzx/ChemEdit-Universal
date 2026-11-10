@@ -5,6 +5,7 @@
 // branch points (like Phoenix ELN).
 
 import type { ElnData, ElnCalc } from "./eln";
+import { str } from "./util";
 
 export interface Run { path: string; code: string; title: string; status: string; date: string; yieldPct: number | null; massMg: number | null; conditions: string }
 export interface SNode { key: string; smiles: string; name: string; layer: number; y: number; in: string[]; out: string[] }
@@ -13,7 +14,7 @@ export interface Seq { id: number; steps: SStep[]; start: string; end: string; k
 export interface SynthGraph { nodes: Map<string, SNode>; steps: SStep[]; seqs: Seq[]; seqEdges: Array<[number, number]> }
 export interface ExpInput { path: string; basename: string; data: ElnData; calc: ElnCalc }
 
-const linkName = (v: any) => String(v ?? "").replace(/^\[\[|\]\]$/g, "").split("|")[0].split("/").pop()!.replace(/\.md$/, "").trim();
+const linkName = (v: unknown) => str(v).replace(/^\[\[|\]\]$/g, "").split("|")[0].split("/").pop()!.replace(/\.md$/, "").trim();
 
 export function bestYieldLabel(s: SStep): string {
   const ys = s.runs.map((r) => r.yieldPct).filter((y): y is number => y !== null && isFinite(y));
@@ -71,7 +72,7 @@ export function buildSynthesis(exps: ExpInput[], canon: (smi: string) => string 
     const y = isFinite(ey) ? ey : prod.p.yieldPct;
     s.runs.push({
       path: e.path, code: String(e.data.code ?? e.basename), title: String(e.data.title ?? ""), status: String(e.data.status ?? "Planned"), date: String(e.data.date ?? ""),
-      yieldPct: y !== null && isFinite(y as number) ? (y as number) : null, massMg: prod.p.isoMass,
+      yieldPct: y !== null && isFinite(y) ? y : null, massMg: prod.p.isoMass,
       conditions: [e.data.solvent, e.data.temperature, e.data.duration].filter(Boolean).join(", "),
     });
   }

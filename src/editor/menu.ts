@@ -1,9 +1,9 @@
 // Lightweight context / dropdown menu with submenus, check marks and shortcuts.
-import { appendRich, setStyles } from "../render/dom";
+import { appendRich, setStyles, htmlEl } from "../render/dom";
 
 export type MenuEntry =
   | "-"
-  | { label: string; action?: () => void; checked?: boolean; disabled?: boolean; shortcut?: string; submenu?: MenuEntry[]; danger?: boolean; html?: string };
+  | { label: string; action?: () => void | Promise<void>; checked?: boolean; disabled?: boolean; shortcut?: string; submenu?: MenuEntry[]; danger?: boolean; html?: string };
 
 export class PopupMenu {
   private els: HTMLElement[] = [];
@@ -28,13 +28,12 @@ export class PopupMenu {
     // drop deeper levels
     while (this.els.length > depth) this.els.pop()!.remove();
     const doc = this.host.ownerDocument;
-    const m = doc.createElement("div");
-    m.className = "ce-menu";
+    const m = htmlEl(doc, "div", "ce-menu");
     for (const it of items) {
-      if (it === "-") { const s = doc.createElement("div"); s.className = "ce-menu-sep"; m.appendChild(s); continue; }
-      const row = doc.createElement("div");
+      if (it === "-") { htmlEl(doc, "div", "ce-menu-sep", m); continue; }
+      const row = htmlEl(doc, "div");
       row.className = "ce-menu-item" + (it.disabled ? " ce-disabled" : "") + (it.danger ? " ce-danger" : "");
-      const sp = (cls: string) => { const e = doc.createElement("span"); e.className = cls; row.appendChild(e); return e; };
+      const sp = (cls: string) => htmlEl(doc, "span", cls, row);
       sp("ce-menu-check").textContent = it.checked ? "✓" : "";
       const lab = sp("ce-menu-label"); if (it.html) appendRich(lab, it.html); else lab.textContent = it.label;
       sp("ce-menu-sc").textContent = it.submenu ? "▸" : it.shortcut ?? "";
@@ -44,11 +43,11 @@ export class PopupMenu {
           this.level(it.submenu!, r.right - hr.left - 2, r.top - hr.top - 4, depth + 1, row);
         };
         if (it.submenu) {
-          row.addEventListener("pointerenter", (e) => { if ((e as PointerEvent).pointerType === "mouse") openSub(); });
+          row.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") openSub(); });
           row.addEventListener("click", (e) => { e.stopPropagation(); openSub(); });
         } else {
           row.addEventListener("pointerenter", () => { while (this.els.length > depth + 1) this.els.pop()!.remove(); });
-          row.addEventListener("click", (e) => { e.stopPropagation(); this.close(); it.action?.(); });
+          row.addEventListener("click", (e) => { e.stopPropagation(); this.close(); void it.action?.(); });
         }
       }
       m.appendChild(row);

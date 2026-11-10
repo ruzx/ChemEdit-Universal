@@ -4,6 +4,7 @@
 
 import { Modal, Notice } from "obsidian";
 import { Img, Pt, Spot, detectPlate, warp, warpSize, contrastMap, detectLines, detectSpots, clusterLanes, rfValue } from "../tlc/image";
+import { errMsg } from "../chem/util";
 import {
   ElnCtx, SectionKey, chips, label, solventPicker, systemText, STAINS, DEFAULT_SYSTEM, SolventSystem,
   pickImage, loadImage, saveBinary, insertIntoNote, fileStamp, nowHM,
@@ -57,7 +58,7 @@ export class TlcModal extends Modal {
   onClose() { this.contentEl.empty(); }
 
   private compounds(): string[] {
-    const n = [...this.ctx.calc.rows.filter((r) => r.role !== "solvent").map((r) => r.src.name || r.formula), ...this.ctx.calc.products.map((p) => p.src.name || "product")].filter(Boolean) as string[];
+    const n = [...this.ctx.calc.rows.filter((r) => r.role !== "solvent").map((r) => r.src.name || r.formula), ...this.ctx.calc.products.map((p) => p.src.name || "product")].filter((x): x is string => !!x);
     return [...new Set([...n, "product", "starting material", "side product", "?"])];
   }
 
@@ -92,7 +93,7 @@ export class TlcModal extends Modal {
         if (!q) new Notice("Plate not found automatically — drag the corners");
         this.step = "crop";
         this.draw();
-      } catch (e: any) { new Notice("Could not read image: " + (e?.message ?? e)); }
+      } catch (e) { new Notice("Could not read image: " + errMsg(e)); }
     };
     row.createEl("button", { text: "📷 Take photo", cls: "mod-cta" }).onclick = () => go(true);
     row.createEl("button", { text: "🖼 Choose image" }).onclick = () => go(false);

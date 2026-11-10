@@ -10,20 +10,24 @@ import { TlcModal } from "./tlc";
 import { CompoundPicker } from "./lab";
 import { CalcPicker } from "./calcview";
 import { nmrBlock } from "./nmrview";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { setSvg } from "../render/dom";
+import { errMsg } from "../chem/util";
+import { str, isRecord } from "../chem/util";
+import { yamlRecord } from "./blockopts";
 const STATUSES = ["Planned", "Running", "Work-up", "Purification", "Completed", "Failed", "On hold"];
 
 /** Quote unquoted SMILES values (they may contain '#', ':' or '[') before YAML parsing — same trick as ChemEdit 1.x. */
 export function parseElnYaml(source: string): ElnData {
-  const safe = source.replace(/^(\s*-?\s*smiles:\s*)(.*)$/gm, (m, pre, v) => {
-    let s = String(v).trim();
+  const safe = source.replace(/^(\s*-?\s*smiles:\s*)(.*)$/gm, (m: string, pre: string, v: string) => {
+    let s = v.trim();
     if (!s) return m;
     if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return m;
     s = s.replace(/\s+#.*$/, "");
     return `${pre}'${s.replace(/'/g, "''")}'`;
   });
-  const d = (parseYaml(safe) ?? {}) as ElnData;
-  if (typeof d !== "object") throw new Error("ELN block must be YAML key: value pairs");
+  const raw: unknown = parseYaml(safe) ?? {};
+  if (!isRecord(raw)) throw new Error("ELN block must be YAML key: value pairs");
+  const d = raw as ElnData;
   d.reactants ??= [];
   d.products ??= [];
   return d;
@@ -103,14 +107,14 @@ export function applySchemeToData(d: ElnData, doc: ChemDoc) {
 function cxOf(g: ReturnType<typeof buildGraph>, c: number[]) { let s = 0; for (const id of c) s += g.atomById.get(id)!.x; return s / c.length; }
 
 export class PromptModal extends Modal {
-  constructor(app: App, private title: string, private placeholder: string, private initial: string, private onOk: (v: string) => void) { super(app); }
+  constructor(app: App, private title: string, private placeholder: string, private initial: string, private onOk: (v: string) => void | Promise<void>) { super(app); }
   onOpen() {
     this.titleEl.setText(this.title);
     const inp = this.contentEl.createEl("input", { type: "text", placeholder: this.placeholder, value: this.initial });
     inp.addClass("ce-full-width");
     const row = this.contentEl.createDiv({ cls: "chemedit-modal-buttons ce-modal-row-end" });
     const ok = row.createEl("button", { text: "OK", cls: "mod-cta" });
-    const go = () => { const v = inp.value.trim(); this.close(); if (v) this.onOk(v); };
+    const go = () => { const v = inp.value.trim(); this.close(); if (v) void this.onOk(v); };
     ok.onclick = go;
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
     window.setTimeout(() => { inp.focus(); inp.select(); }, 20);
@@ -138,9 +142,9 @@ export class ElnRenderer {
   render(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
     let d: ElnData;
     try { d = parseElnYaml(source); }
-    catch (e: any) { el.createDiv({ cls: "chemedit-error", text: `ELN: ${e?.message ?? e}` }); return; }
+    catch (e) { el.createDiv({ cls: "chemedit-error", text: `ELN: ${errMsg(e)}` }); return; }
     const calc = calculateEln(d);
-    const save = (mut: (d: ElnData) => void) => { mut(d); this.save(el, ctx, d); };
+    const save = (mut: (d: ElnData) => void) => { mut(d); void this.save(el, ctx, d); };
     const box = el.createDiv({ cls: "ce-eln" });
 
     // header
@@ -226,7 +230,7 @@ export class ElnRenderer {
 
     // actions
     const bar = box.createDiv({ cls: "ce-eln-bar" });
-    const btn = (label: string, fn: (e: MouseEvent) => void) => { const b = bar.createEl("button", { text: label }); b.onclick = fn; return b; };
+    const btn = (label: string, fn: (e: MouseEvent) => void | Promise<void>) => { const b = bar.createEl("button", { text: label }); b.onclick = (e) => { void fn(e); }; return b; };
     btn("+ Reagent", (e) => {
       const m = new Menu();
       const add = (role: Role) => (c: ElnCompound) => save((x) => { x.reactants!.push({ ...c, role: role === "reactant" ? undefined : role, eq: role === "solvent" ? undefined : c.eq ?? 1 }); });
@@ -254,11 +258,11 @@ export class ElnRenderer {
     if (!(file instanceof TFile)) return;
     const lc: ElnCtx = { plugin: this.plugin, file, data: d, calc };
     const bar = box.createDiv({ cls: "ce-eln-bar ce-eln-lb" });
-    const b = (icon: string, text: string, fn: () => void, title?: string) => {
+    const b = (icon: string, text: string, fn: () => void | Promise<void>, title?: string) => {
       const x = bar.createEl("button", { cls: "ce-eln-lbbtn", attr: { "aria-label": title ?? text } });
       setIcon(x.createSpan(), icon);
       x.createSpan({ text });
-      x.onclick = (e) => { e.preventDefault(); fn(); };
+      x.onclick = (e) => { e.preventDefault(); void fn(); };
     };
     b("list-plus", "Step", () => new StepModal(lc, "experimental").open(), "Add numbered step (reagent phrases, time stamps)");
     b("eye", "Observe", () => new StepModal(lc, "experimental", true).open(), "Observation");
@@ -279,7 +283,7 @@ export class ElnRenderer {
     const st = bar.createEl("select", { cls: "dropdown ce-eln-stsel" });
     for (const v of STATUSES) st.createEl("option", { value: v, text: v });
     st.value = d.status ?? "Planned";
-    st.onchange = () => { d.status = st.value; if (st.value === "Running" && !d.started) d.started = new Date().toISOString().slice(0, 16).replace("T", " "); this.save(el, ctx, d); };
+    st.onchange = () => { d.status = st.value; if (st.value === "Running" && !d.started) d.started = new Date().toISOString().slice(0, 16).replace("T", " "); void this.save(el, ctx, d); };
   }
 
   private nextStep(file: TFile, d: ElnData, calc: ElnCalc) {
@@ -289,7 +293,7 @@ export class ElnRenderer {
       project: d.project, previous: `[[${file.basename}]]`,
       reactants: [{ name: p.src.name ?? "starting material", ...(p.src.smiles ? { smiles: p.src.smiles } : {}), eq: 1, is_limiting: true, ...(p.isoMmol ? { mmol: +p.isoMmol.toFixed(3) } : {}) }],
       products: [],
-    } as ElnData);
+    });
   }
 
   private addByName(onOk: (c: ElnCompound) => void) {
@@ -321,9 +325,9 @@ export class ElnRenderer {
     const tags = nameTd.createDiv({ cls: "ce-eln-formula" });
     tags.setText([r.limiting ? "limiting" : r.role !== "reactant" ? r.role : "", r.src.name && r.formula ? r.formula : ""].filter(Boolean).join(" · "));
     tr.createEl("td", { text: r.mw ? r.mw.toFixed(2) : "–" });
-    const numEdit = (cell: HTMLElement, key: keyof ElnCompound, shown: string, raw: any) => {
+    const numEdit = (cell: HTMLElement, key: keyof ElnCompound, shown: string, raw: unknown) => {
       cell.setText(shown);
-      this.editable(cell, raw === undefined || raw === null ? "" : String(raw), "number", (v) => save((x) => {
+      this.editable(cell, str(raw), "number", (v) => save((x) => {
         const c = at(x);
         if (v === "") delete c[key as string]; else c[key as string] = +v;
         // a measured amount on the limiting reagent defines the scale; clear conflicting inputs
@@ -400,10 +404,9 @@ export class ElnRenderer {
 
   // ------------------------------------------------------------------ index block
   async renderList(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-    let cfg: any = {};
-    try { cfg = parseYaml(source) ?? {}; } catch { /* */ }
-    const folder: string = (cfg.folder ?? cfg.path ?? this.plugin.settings.elnFolder ?? "").replace(/\/$/, "");
-    const statusFilter: string | undefined = cfg.status;
+    const cfg = yamlRecord(source);
+    const folder: string = (str(cfg.folder) || str(cfg.path) || this.plugin.settings.elnFolder || "").replace(/\/$/, "");
+    const statusFilter: string | undefined = str(cfg.status) || undefined;
     const files = this.plugin.app.vault.getMarkdownFiles().filter((f) => !folder || f.path.startsWith(folder + "/"));
     const rows: Array<{ f: TFile; d: ElnData; calc: ReturnType<typeof calculateEln> }> = [];
     for (const f of files) {
@@ -425,7 +428,7 @@ export class ElnRenderer {
     for (const { f, d, calc } of rows) {
       const tr = tb.createEl("tr");
       const a = tr.createEl("td").createEl("a", { cls: "internal-link", text: d.code || f.basename });
-      a.onclick = (e) => { e.preventDefault(); this.plugin.app.workspace.getLeaf(false).openFile(f); };
+      a.onclick = (e) => { e.preventDefault(); void this.plugin.app.workspace.getLeaf(false).openFile(f); };
       const p = calc.products[0];
       const th = tr.createEl("td", { cls: "ce-eln-thumb" });
       if (p?.src.smiles) { try { setSvg(th, this.plugin.svgFor(parseAny(String(p.src.smiles)), { maxHeight: 50, padding: 2 })); } catch { /* */ } }

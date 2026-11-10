@@ -10,6 +10,10 @@ export function clearEl(el: Element) { while (el.firstChild) el.removeChild(el.f
 /** Parse a standalone `<svg>…</svg>` string into an element owned by `doc`. Returns null on parse errors. */
 export function parseSvg(svg: string, doc: Document = document): SVGSVGElement | null {
   if (!svg) return null;
+  svg = svg.trim();
+  // icon strings are often written without a namespace; XML parsing needs it to produce real SVG elements
+  if (!/^<svg\b[^>]*\sxmlns=/.test(svg)) svg = svg.replace(/^<svg\b/, `<svg xmlns="${SVGNS}"`);
+  if (!/\sxmlns:xlink=/.test(svg) && /xlink:/.test(svg)) svg = svg.replace(/^<svg\b/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
   const x = new DOMParser().parseFromString(svg, "image/svg+xml");
   const root = x.documentElement;
   if (!root || root.nodeName.toLowerCase() !== "svg" || x.getElementsByTagName("parsererror").length) return null;
@@ -63,7 +67,7 @@ export function appendRich(el: HTMLElement, html: string) {
       else if (n.nodeType === 1) {
         const e = n as Element;
         if (!RICH_TAGS.has(e.tagName)) { copy(e, dst); continue; }
-        const c = doc.createElement(e.tagName.toLowerCase());
+        const c = doc.createElementNS(XHTML, e.tagName.toLowerCase());
         const cls = e.getAttribute("class"); if (cls) c.className = cls;
         dst.appendChild(c); copy(e, c);
       }
@@ -74,8 +78,16 @@ export function appendRich(el: HTMLElement, html: string) {
 export function setRich(el: HTMLElement, html: string) { clearEl(el); appendRich(el, html); }
 
 /** Inline styles without touching `el.style.x = …` (uses Obsidian's setCssStyles when present). */
-export function setStyles(el: HTMLElement | SVGElement, s: Record<string, string>) {
-  const any = el as any;
-  if (typeof any.setCssStyles === "function") { any.setCssStyles(s); return; }
-  for (const [k, v] of Object.entries(s)) el.style.setProperty(k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()), v);
+export function setStyles(el: HTMLElement, s: Partial<CSSStyleDeclaration>) {
+  if (typeof el.setCssStyles === "function") { el.setCssStyles(s); return; }
+  for (const [k, v] of Object.entries(s)) if (typeof v === "string") el.style.setProperty(k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()), v);
+}
+
+const XHTML = "http://www.w3.org/1999/xhtml";
+/** Create an HTML element in `doc` (works in pop-out windows and outside Obsidian). */
+export function htmlEl<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, cls?: string, parent?: Element): HTMLElementTagNameMap[K] {
+  const e = doc.createElementNS(XHTML, tag) as HTMLElementTagNameMap[K];
+  if (cls) e.className = cls;
+  parent?.appendChild(e);
+  return e;
 }

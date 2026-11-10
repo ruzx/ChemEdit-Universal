@@ -42,7 +42,7 @@ export function parityFromDrawing(g: Graph, centre: Atom, order: number[]): "@" 
   };
   const full = vecs.map((v) => v ?? fill());
   if (full.length === 3) full.push(fill()); // 3 neighbours, no H listed: treat 4th as lone pair
-  const [n0, n1, n2, n3] = full as Array<[number, number, number]>;
+  const [n0, n1, n2, n3] = full;
   const a = [n1[0] - n0[0], n1[1] - n0[1], n1[2] - n0[2]];
   const b = [n2[0] - n0[0], n2[1] - n0[1], n2[2] - n0[2]];
   const c = [n3[0] - n0[0], n3[1] - n0[1], n3[2] - n0[2]];

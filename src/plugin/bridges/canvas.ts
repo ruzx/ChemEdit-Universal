@@ -2,6 +2,8 @@
 import { Notice, TFile, ItemView, setIcon, requestUrl } from 'obsidian';
 import type ChemEditPlugin from '../main';
 import { extractDataFromSvg } from '../svgmeta';
+import { fileStamp } from "../dates";
+import { canvasOf, iupacOf, type CanvasNode } from "./types";
 
 
 export function initCanvasBridge(plugin: ChemEditPlugin) {
@@ -18,17 +20,18 @@ function injectCanvasUI(plugin: ChemEditPlugin) {
     const canvasUI = container.querySelector('.canvas-wrapper') || container;
     if (!canvasUI) return;
 
-    let toolsContainer = container.querySelector('.chemedit-canvas-tools') as HTMLElement;
+    let toolsContainer = container.querySelector<HTMLElement>('.chemedit-canvas-tools');
     if (!toolsContainer) {
-        toolsContainer = createDiv({ cls: 'chemedit-canvas-tools ce-bridge-tools' });
-        canvasUI.appendChild(toolsContainer);
+        const tools = createDiv({ cls: 'chemedit-canvas-tools ce-bridge-tools' });
+        toolsContainer = tools;
+        canvasUI.appendChild(tools);
 
-        const createBtn = (iconName: string, title: string, isMain: boolean, onClick: () => void) => {
+        const createBtn = (iconName: string, title: string, isMain: boolean, onClick: () => void | Promise<void>) => {
             const btn = createEl('button', { cls: isMain ? 'ce-bridge-btn is-main' : 'ce-bridge-btn' });
             btn.title = title;
             setIcon(btn, iconName);
-            btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(); };
-            toolsContainer.appendChild(btn);
+            btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); void onClick(); };
+            tools.appendChild(btn);
         };
 
         createBtn("hexagon", "Draw Structure (Select text like 'Aspirin' first to auto-convert)", true, () => handleCanvasAction(plugin, view, 'draw'));
@@ -40,14 +43,14 @@ function injectCanvasUI(plugin: ChemEditPlugin) {
     if (!container.dataset.chemeditDblClick) {
         container.dataset.chemeditDblClick = "true";
         container.addEventListener('dblclick', (e) => {
-            const canvas = (view as any).canvas;
+            const canvas = canvasOf(view);
             if (!canvas) return;
             
             window.setTimeout(() => {
                 const selectedNodes = Array.from(canvas.selection);
                 if (selectedNodes.length === 1) {
-                    const node = selectedNodes[0] as any;
-                    if (node.file) handleCanvasAction(plugin, view, 'draw', true, node);
+                    const node = selectedNodes[0];
+                    if (node.file) void handleCanvasAction(plugin, view, 'draw', true, node);
                 }
             }, 50);
         }, true);
@@ -63,11 +66,11 @@ function applyChemDrawStyle(svg: string): string {
     return polished;
 }
 
-async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType: 'draw'|'props'|'copy'|'web', isDblClick: boolean = false, targetNode: any = null) {
-    const canvas = view.canvas;
+async function handleCanvasAction(plugin: ChemEditPlugin, view: ItemView, actionType: 'draw'|'props'|'copy'|'web', isDblClick = false, targetNode: CanvasNode | null = null) {
+    const canvas = canvasOf(view);
     if (!canvas) { new Notice("Canvas API not found."); return; }
 
-    const selectedNodes = Array.from(canvas.selection) as any[];
+    const selectedNodes = Array.from(canvas.selection);
     let initialData = "";
     let tfile: TFile | null = null;
     let nodeToUpdate = targetNode;
@@ -116,7 +119,7 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
         catch { new Notice("Failed to convert structure."); return; }
     }
 
-    if (actionType === 'copy') { navigator.clipboard.writeText(smilesData); new Notice("SMILES Copied!"); return; }
+    if (actionType === 'copy') { void navigator.clipboard.writeText(smilesData); new Notice("SMILES Copied!"); return; }
     if (actionType === 'web') { window.open(`https://pubchem.ncbi.nlm.nih.gov/#query=${encodeURIComponent(smilesData)}`, '_blank'); return; }
 
     if (actionType === 'props') {
@@ -125,10 +128,10 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
         let iupac = "";
         try {
             const res = await requestUrl(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smilesData)}/property/IUPACName/JSON`);
-            if (res.status === 200) iupac = res.json.PropertyTable.Properties[0].IUPACName;
+            if (res.status === 200) iupac = iupacOf(res.json);
         } catch { /* offline */ }
 
-        if (props && props.mw > 0) {
+        if (props && props.mw > 0 && nodeToUpdate) {
             const text = `${iupac ? `**Name:** ${iupac}\n` : ''}**Formula:** ${props.formula}\n**MW:** ${props.mw.toFixed(2)}`;
             canvas.createTextNode({
                 pos: { x: nodeToUpdate.x, y: nodeToUpdate.y + nodeToUpdate.height + 20 },
@@ -176,7 +179,7 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
                 window.setTimeout(() => {
                     if (nodeToUpdate.nodeEl) {
                         const imgEls = nodeToUpdate.nodeEl.querySelectorAll('img');
-                        imgEls.forEach((img: HTMLImageElement) => {
+                        imgEls.forEach((img) => {
                             const currentSrc = img.getAttribute('src');
                             if (currentSrc) {
                                 img.setAttribute('src', currentSrc.split('?')[0] + '?_t=' + Date.now());
@@ -196,7 +199,7 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
                 if (savePath && !savePath.endsWith("/")) savePath += "/";
                 if (savePath && !plugin.app.vault.getAbstractFileByPath(savePath.slice(0,-1))) await plugin.app.vault.createFolder(savePath.slice(0,-1));
                 
-                const filename = `${savePath}Structure_${(window.moment ? window.moment().format("YYYYMMDD_HHmmss") : Date.now())}.svg`;
+                const filename = `${savePath}Structure_${fileStamp()}.svg`;
                 const fileToEmbed = await plugin.app.vault.create(filename, newData);
                 
                 // Wait for Obsidian to register the file

@@ -120,7 +120,7 @@ export function parseXml(src: string): XNode {
   const stack = [root];
   const re = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!DOCTYPE[\s\S]*?>|<!\[CDATA\[([\s\S]*?)\]\]>|<\/([\w:.-]+)\s*>|<([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
   let m: RegExpExecArray | null;
-  const unesc = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&#x([\da-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16))).replace(/&amp;/g, "&");
+  const unesc = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_: string, n: string) => String.fromCharCode(+n)).replace(/&#x([\da-f]+);/gi, (_: string, n: string) => String.fromCharCode(parseInt(n, 16))).replace(/&amp;/g, "&");
   while ((m = re.exec(src))) {
     const top = stack[stack.length - 1];
     if (m[1] !== undefined) top.text += m[1];
@@ -299,20 +299,26 @@ export function writeCdxml(src: ChemDoc): string {
 
 export function isKet(s: string) { const t = s.trim(); return t.startsWith("{") && t.includes('"root"'); }
 
+interface KetAtom { label?: string; type?: string; location?: number[]; charge?: number; isotope?: number; implicitHCount?: number; alias?: string; $refs?: unknown }
+interface KetBond { type: number; atoms: number[]; stereo?: number }
+interface KetMol { type: string; atoms?: KetAtom[]; bonds?: KetBond[] }
+interface KetNode { $ref?: string; type?: string; location?: number[]; data?: { pos?: Array<{ x: number; y: number; z?: number }>; mode?: string; content?: string; position?: { x: number; y: number } } }
+interface KetDoc { root?: { nodes: KetNode[] }; [key: string]: unknown }
+
 export function parseKet(text: string): ChemDoc {
-  const o = JSON.parse(text);
+  const o = JSON.parse(text) as KetDoc;
   const doc = emptyDoc();
-  const nodes: any[] = o.root?.nodes ?? [];
+  const nodes: KetNode[] = o.root?.nodes ?? [];
   for (const n of nodes) {
     if (n.$ref) {
-      const m = o[n.$ref];
+      const m = o[n.$ref] as KetMol | undefined;
       if (!m || m.type !== "molecule") continue;
       const ids: number[] = [];
       for (const a of m.atoms ?? []) {
         const loc = a.location ?? [0, 0, 0];
         const isLabel = a.type === "rg-label" || a.type === "atom-list" || !a.label;
-        const at = addAtom(doc, isLabel ? "*" : a.label === "D" ? "H" : a.label, loc[0], -loc[1], { charge: a.charge ?? 0 });
-        if (isLabel) at.label = a.$refs ? "R" : "R";
+        const at = addAtom(doc, isLabel ? "*" : a.label === "D" ? "H" : a.label ?? "C", loc[0], -loc[1], { charge: a.charge ?? 0 });
+        if (isLabel) at.label = "R";
         if (a.isotope) at.isotope = a.isotope;
         if (a.implicitHCount !== undefined) at.hCount = a.implicitHCount;
         if (a.alias) { at.label = a.alias; at.el = "*"; const ex = lookupAbbreviation(a.alias); if (ex) at.expand = ex; }
@@ -322,15 +328,10 @@ export function parseKet(text: string): ChemDoc {
         const st: BondStereo = b.stereo === 1 ? 1 : b.stereo === 6 ? 6 : b.stereo === 4 ? 4 : 0;
         addBond(doc, ids[b.atoms[0]], ids[b.atoms[1]], b.type >= 1 && b.type <= 4 ? b.type : 1, st);
       }
-      // superatom abbreviations (S-groups of type SUP)
-      for (const sg of m.sgroups ?? []) {
-        if (sg.type !== "SUP" || !sg.data?.name || !sg.atoms?.length) continue;
-        void sg;
-      }
     } else if (n.type === "arrow") {
       const pos = n.data?.pos ?? [];
       if (pos.length >= 2) {
-        const mode: string = n.data.mode ?? "open-angle";
+        const mode: string = n.data?.mode ?? "open-angle";
         const kind: ArrowKind = mode.includes("equilibrium") ? "equilibrium" : mode.includes("retrosynthetic") ? "retro" : mode.includes("both-ends") ? "resonance" : mode.includes("dashed") ? "dashed" : "forward";
         doc.arrows.push({ id: newId(doc), x1: pos[0].x, y1: -pos[0].y, x2: pos[1].x, y2: -pos[1].y, kind });
       }
@@ -339,9 +340,9 @@ export function parseKet(text: string): ChemDoc {
       doc.pluses.push({ id: newId(doc), x: loc[0], y: -loc[1] });
     } else if (n.type === "text") {
       try {
-        const c = JSON.parse(n.data.content);
-        const t = (c.blocks ?? []).map((b: any) => b.text).join("\n");
-        const p = n.data.position ?? { x: 0, y: 0 };
+        const c = JSON.parse(n.data?.content ?? "{}") as { blocks?: Array<{ text?: string }> };
+        const t = (c.blocks ?? []).map((b) => b.text ?? "").join("\n");
+        const p = n.data?.position ?? { x: 0, y: 0 };
         if (t) doc.texts.push({ id: newId(doc), x: p.x + t.length * 0.15, y: -p.y, text: t });
       } catch { /* */ }
     }
@@ -356,29 +357,30 @@ export function parseKet(text: string): ChemDoc {
 export function writeKet(src: ChemDoc): string {
   const doc = expandAbbreviations(src);
   const g = buildGraph(doc);
-  const out: any = { root: { nodes: [] } };
+  const nodesOut: KetNode[] = [];
+  const out: KetDoc = { root: { nodes: nodesOut } };
   components(doc, g).forEach((comp, i) => {
     const idx = new Map<number, number>();
     const atoms = comp.map((id, k) => {
       idx.set(id, k);
       const a = g.atomById.get(id)!;
-      const o: any = { label: a.el === "*" ? "C" : a.el, location: [+a.x.toFixed(4), +(-a.y).toFixed(4), 0] };
+      const o: KetAtom = { label: a.el === "*" ? "C" : a.el, location: [+a.x.toFixed(4), +(-a.y).toFixed(4), 0] };
       if (a.charge) o.charge = a.charge;
       if (a.isotope) o.isotope = a.isotope;
       return o;
     });
     const bonds = doc.bonds.filter((b) => idx.has(b.a)).map((b) => {
-      const o: any = { type: b.order, atoms: [idx.get(b.a), idx.get(b.b)] };
+      const o: KetBond = { type: b.order, atoms: [idx.get(b.a) ?? 0, idx.get(b.b) ?? 0] };
       if (b.stereo) o.stereo = b.stereo;
       return o;
     });
-    out[`mol${i}`] = { type: "molecule", atoms, bonds };
-    out.root.nodes.push({ $ref: `mol${i}` });
+    out[`mol${i}`] = { type: "molecule", atoms, bonds } satisfies KetMol;
+    nodesOut.push({ $ref: `mol${i}` });
   });
   for (const r of doc.arrows) {
     const mode = r.kind === "equilibrium" ? "equilibrium-filled-half-bow" : r.kind === "retro" ? "retrosynthetic" : r.kind === "resonance" ? "filled-triangle-both-ends" : r.kind === "dashed" ? "dashed-open-angle" : "open-angle";
-    out.root.nodes.push({ type: "arrow", data: { mode, pos: [{ x: r.x1, y: -r.y1, z: 0 }, { x: r.x2, y: -r.y2, z: 0 }] } });
+    nodesOut.push({ type: "arrow", data: { mode, pos: [{ x: r.x1, y: -r.y1, z: 0 }, { x: r.x2, y: -r.y2, z: 0 }] } });
   }
-  for (const p of doc.pluses) out.root.nodes.push({ type: "plus", location: [p.x, -p.y, 0] });
+  for (const p of doc.pluses) nodesOut.push({ type: "plus", location: [p.x, -p.y, 0] });
   return JSON.stringify(out, null, 1);
 }

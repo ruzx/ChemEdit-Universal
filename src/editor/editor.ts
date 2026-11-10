@@ -14,8 +14,9 @@ import { computeProperties } from "../chem/props";
 import { lookupAbbreviation, ABBREVIATIONS, contractAbbreviations, expandAbbreviations, DEFAULT_CONTRACT } from "../chem/abbrev";
 import { renderBody, renderSVG, RenderOptions } from "../render/svg";
 import { ICONS } from "./icons";
-import { appendSvg, appendRich, clearEl, setSvgChildren, setStyles } from "../render/dom";
+import { appendSvg, appendRich, clearEl, setSvgChildren, setStyles, htmlEl } from "../render/dom";
 import { injectEditorCss } from "./css";
+import { errMsg } from "../chem/util";
 
 const BL = 30; // px per bond in drawing space
 const DEG = Math.PI / 180;
@@ -46,9 +47,9 @@ export interface EditorOptions {
   onChange?: (doc: ChemDoc) => void;
   colorAtoms?: boolean;
   /** called when the user presses Ctrl/Cmd+Enter */
-  onSubmit?: () => void;
+  onSubmit?: () => void | Promise<void>;
   /** host-provided file saving (Obsidian: write into the vault); default = browser download */
-  saveFile?: (name: string, data: string | Blob) => void;
+  saveFile?: (name: string, data: string | Blob) => void | Promise<void>;
   /** inject the editor stylesheet into the document (default true; the Obsidian plugin ships styles.css) */
   injectCss?: boolean;
   /** PNG export: pixels per SVG pixel (default 4 ≈ 300 dpi at journal size) */
@@ -136,7 +137,7 @@ export class ChemEditor {
 
   constructor(host: HTMLElement, private opts: EditorOptions = {}) {
     if (opts.injectCss !== false) injectEditorCss(host.ownerDocument);
-    this.root = host.ownerDocument.createElement("div");
+    this.root = htmlEl(host.ownerDocument, "div");
     this.root.className = "ce-root";
     this.root.tabIndex = 0;
     host.appendChild(this.root);
@@ -160,7 +161,7 @@ export class ChemEditor {
   setDoc(input: ChemDoc | string, undoable = true) {
     let d: ChemDoc;
     try { d = typeof input === "string" ? parseAny(input) : cloneDoc(input); }
-    catch (e: any) { this.toast("Could not read structure: " + (e?.message ?? e)); return; }
+    catch (e) { this.toast("Could not read structure: " + errMsg(e)); return; }
     if (undoable) this.pushUndo();
     this.doc = d;
     this.sel.clear();
@@ -189,10 +190,7 @@ export class ChemEditor {
 
   // ------------------------------------------------------------------ DOM
   private el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, parent?: HTMLElement): HTMLElementTagNameMap[K] {
-    const e = this.root.ownerDocument.createElement(tag);
-    if (cls) e.className = cls;
-    if (parent) parent.appendChild(e);
-    return e;
+    return htmlEl(this.root.ownerDocument, tag, cls, parent);
   }
 
   private btn(parent: HTMLElement, icon: string, title: string, onClick: (e: MouseEvent) => void, label?: string): HTMLButtonElement {
@@ -205,7 +203,7 @@ export class ChemEditor {
     return b;
   }
 
-  private groups = new Map<string, { btn: HTMLButtonElement; variants: Variant[]; cur: number }>();
+  private groups = new Map<string, { btn: HTMLButtonElement; variants: Variant[]; cur: number; paint?: () => void }>();
   private menu!: PopupMenu;
   private analysisEl!: HTMLDivElement;
   private analysisOn = false;
@@ -239,13 +237,13 @@ export class ChemEditor {
       { key: "ring:7", icon: "r7", title: "Cycloheptane (7)", tool: { k: "ring", n: 7, arom: false } },
       { key: "ring:8", icon: "r8", title: "Cyclooctane (8)", tool: { k: "ring", n: 8, arom: false } },
     ]);
-    this.group(top, "tmpl", TEMPLATES.map(([name, smi]) => ({ key: "tmpl:" + name, icon: "tmpl", title: name + " template", tool: { k: "template", name, smi } as Tool, thumb: smi })));
+    this.group(top, "tmpl", TEMPLATES.map(([name, smi]) => ({ key: "tmpl:" + name, icon: "tmpl", title: name + " template", tool: { k: "template", name, smi }, thumb: smi })));
     this.group(top, "charge", [
       { key: "charge:+", icon: "plusCharge", title: "Positive charge (+)", tool: { k: "charge", d: 1 } },
       { key: "charge:-", icon: "minusCharge", title: "Negative charge (−)", tool: { k: "charge", d: -1 } },
     ]);
     this.group(top, "arrow", (["forward", "equilibrium", "retro", "resonance", "dashed"] as ArrowKind[]).map((k) => ({
-      key: "arrow:" + k, icon: k === "forward" ? "arrow" : k, title: { forward: "Reaction arrow (R)", equilibrium: "Equilibrium arrow", retro: "Retrosynthetic arrow", resonance: "Resonance arrow", dashed: "Dashed arrow" }[k], tool: { k: "arrow", kind: k } as Tool,
+      key: "arrow:" + k, icon: k === "forward" ? "arrow" : k, title: { forward: "Reaction arrow (R)", equilibrium: "Equilibrium arrow", retro: "Retrosynthetic arrow", resonance: "Resonance arrow", dashed: "Dashed arrow" }[k], tool: { k: "arrow", kind: k },
     })));
     this.group(top, "plus", [{ key: "plus", icon: "plus", title: "Reaction plus", tool: { k: "plus" } }]);
     this.group(top, "text", [{ key: "text", icon: "text", title: "Text / caption (T) — digits after letters become subscripts", tool: { k: "text" } }]);
@@ -263,11 +261,11 @@ export class ChemEditor {
     this.importInput.placeholder = this.opts.resolveName ? "SMILES / name…" : "SMILES / Molfile…";
     this.importInput.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") { e.preventDefault(); this.importText(this.importInput.value); }
+      if (e.key === "Enter") { e.preventDefault(); void this.importText(this.importInput.value); }
       if (e.key === "Escape") { this.importInput.value = ""; this.focus(); }
     });
     this.btn(top, "open", "Add structure: from the text box, or open a file (MOL, SDF, RXN, CDXML, KET, SMI, SVG)", () => {
-      if (this.importInput.value.trim()) this.importText(this.importInput.value); else this.fileInput.click();
+      if (this.importInput.value.trim()) void this.importText(this.importInput.value); else this.fileInput.click();
     });
     this.btn(top, "download", "Copy / export (SMILES, Molfile, CDXML, SVG, PNG…)", (e) => this.showMenuAt(e.currentTarget as HTMLElement, this.exportMenu()));
     const an = this.btn(top, "sigma", "Analysis: formula, exact mass, m/z, elemental analysis", () => this.toggleAnalysis());
@@ -292,11 +290,11 @@ export class ChemEditor {
     const main = this.el("div", "ce-main", this.root);
     this.wrap = this.el("div", "ce-canvas-wrap", main);
     const NS = "http://www.w3.org/2000/svg";
-    this.svg = this.root.ownerDocument.createElementNS(NS, "svg") as SVGSVGElement;
+    this.svg = this.root.ownerDocument.createElementNS(NS, "svg");
     this.svg.setAttribute("class", "ce-canvas");
-    this.viewG = this.root.ownerDocument.createElementNS(NS, "g") as SVGGElement;
-    this.contentG = this.root.ownerDocument.createElementNS(NS, "g") as SVGGElement;
-    this.overlayG = this.root.ownerDocument.createElementNS(NS, "g") as SVGGElement;
+    this.viewG = this.root.ownerDocument.createElementNS(NS, "g");
+    this.contentG = this.root.ownerDocument.createElementNS(NS, "g");
+    this.overlayG = this.root.ownerDocument.createElementNS(NS, "g");
     this.viewG.appendChild(this.contentG);
     this.viewG.appendChild(this.overlayG);
     this.svg.appendChild(this.viewG);
@@ -309,13 +307,13 @@ export class ChemEditor {
     this.fileInput.type = "file";
     this.fileInput.accept = ".mol,.sdf,.sd,.rxn,.cdxml,.ket,.smi,.smiles,.chemedit,.svg,.txt,.cml,.xyz,.mol2,.pdb";
     setStyles(this.fileInput, { display: "none" });
-    this.fileInput.addEventListener("change", async () => {
+    this.fileInput.addEventListener("change", () => { void (async () => {
       const f = this.fileInput.files?.[0];
       if (!f) return;
       const text = await f.text();
       this.fileInput.value = "";
       this.importFileText(text, f.name);
-    });
+    })(); });
 
     // events
     this.svg.addEventListener("pointerdown", (e) => this.onDown(e));
@@ -327,16 +325,16 @@ export class ChemEditor {
     this.svg.addEventListener("contextmenu", (e) => e.preventDefault());
     this.root.addEventListener("keydown", (e) => this.onKey(e));
     this.root.addEventListener("keyup", (e) => { if (e.key === " ") { this.spaceDown = false; this.svg.classList.remove("ce-panning"); } });
-    this.root.addEventListener("paste", (e) => this.onPaste(e as ClipboardEvent));
-    this.root.addEventListener("copy", (e) => this.onCopy(e as ClipboardEvent, false));
-    this.root.addEventListener("cut", (e) => this.onCopy(e as ClipboardEvent, true));
+    this.root.addEventListener("paste", (e) => this.onPaste(e));
+    this.root.addEventListener("copy", (e) => this.onCopy(e, false));
+    this.root.addEventListener("cut", (e) => this.onCopy(e, true));
     this.setTool(this.tool);
   }
 
   private group(parent: HTMLElement, id: string, variants: Variant[]) {
     const b = this.el("button", "ce-btn ce-tool", parent);
     b.type = "button";
-    const entry = { btn: b, variants, cur: 0 };
+    const entry: { btn: HTMLButtonElement; variants: Variant[]; cur: number; paint?: () => void } = { btn: b, variants, cur: 0 };
     this.groups.set(id, entry);
     const paint = () => {
       const v = variants[entry.cur];
@@ -346,7 +344,7 @@ export class ChemEditor {
       if (variants.length > 1) this.el("i", "ce-tri", b);
     };
     paint();
-    (b as any).__paint = paint;
+    entry.paint = paint;
     b.addEventListener("click", (e) => {
       e.preventDefault();
       const onTri = (e.target as HTMLElement).classList?.contains("ce-tri");
@@ -388,7 +386,7 @@ export class ChemEditor {
     const key = toolKey(t);
     for (const [, g] of this.groups) {
       const idx = g.variants.findIndex((v) => v.key === key);
-      if (idx >= 0) { g.cur = idx; (g.btn as any).__paint(); }
+      if (idx >= 0) { g.cur = idx; g.paint?.(); }
       g.btn.classList.toggle("ce-on", idx >= 0);
     }
     for (const [k, b] of this.toolBtns) if (k.startsWith("atom:")) b.classList.toggle("ce-on", k === key || (key === "atom:other" && k === "atom:other"));
@@ -448,16 +446,15 @@ export class ChemEditor {
   private async copyPng(d: ChemDoc) {
     try {
       const blob = await svgToPngBlob(this.svgOf(d), this.opts.pngScale ?? 4);
-      const CI = (window as any).ClipboardItem;
-      await navigator.clipboard.write([new CI({ "image/png": blob })]);
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       this.toast("Image copied — paste into Word, PowerPoint…");
     } catch { this.toast("Image clipboard not available here"); }
   }
 
   private saveFile(name: string, data: string | Blob) {
-    if (this.opts.saveFile) { this.opts.saveFile(name, data); return; }
+    if (this.opts.saveFile) { void this.opts.saveFile(name, data); return; }
     const blob = typeof data === "string" ? new Blob([data], { type: "text/plain" }) : data;
-    const a = this.root.ownerDocument.createElement("a");
+    const a = htmlEl(this.root.ownerDocument, "a");
     a.href = URL.createObjectURL(blob);
     a.download = name;
     a.click();
@@ -474,7 +471,7 @@ export class ChemEditor {
         const raw = m[2].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
         d = parseAny(raw);
       } else d = parseAny(text, formatForExtension(ext));
-    } catch (e: any) { this.toast("Could not read file: " + (e?.message ?? e)); return; }
+    } catch (e) { this.toast("Could not read file: " + errMsg(e)); return; }
     if (d && !isEmpty(d)) this.insertDoc(d);
   }
 
@@ -585,7 +582,7 @@ export class ChemEditor {
 
   private canvasMenu(): MenuEntry[] {
     return [
-      { label: "Paste", shortcut: "Ctrl+V", action: async () => { try { const t = await navigator.clipboard.readText(); const d = this.clip && t.trim() === this.clip.smiles ? JSON.parse(this.clip.native) : parseAny(t); this.insertDoc(d); } catch { this.toast("Nothing to paste"); } } },
+      { label: "Paste", shortcut: "Ctrl+V", action: async () => { try { const t = await navigator.clipboard.readText(); const d = this.clip && t.trim() === this.clip.smiles ? JSON.parse(this.clip.native) as ChemDoc : parseAny(t); this.insertDoc(d); } catch { this.toast("Nothing to paste"); } } },
       { label: "Select all", shortcut: "Ctrl+A", action: () => this.selectAll() },
       { label: "Undo", shortcut: "Ctrl+Z", disabled: !this.undoStack.length, action: () => this.undo() },
       { label: "Redo", shortcut: "Ctrl+Y", disabled: !this.redoStack.length, action: () => this.redo() },
@@ -607,7 +604,7 @@ export class ChemEditor {
     const d = this.selectionDoc() ?? this.doc;
     const smiles = docToSmiles(d);
     this.clip = { native: JSON.stringify(d), smiles };
-    this.copyText(smiles, "Copied (SMILES on clipboard)");
+    void this.copyText(smiles, "Copied (SMILES on clipboard)");
   }
 
   private selectFragment(atomId: number) {
@@ -714,7 +711,7 @@ export class ChemEditor {
     cp.addEventListener("click", () => {
       const lines = [`Formula: ${an.formula}`, `MW: ${an.mw.toFixed(2)}`, `Exact mass: ${f4(an.exact)}`, ...an.adducts.map((x) => `${x.ion}: ${f4(x.mz)}`),
         `Anal. calcd for ${an.formula}: ` + an.ea.filter((x) => ["C", "H", "N", "S"].includes(x.el)).map((x) => `${x.el}, ${x.pct.toFixed(2)}`).join("; ") + "."];
-      this.copyText(lines.join("\n"), "Analysis copied");
+      void this.copyText(lines.join("\n"), "Analysis copied");
     });
   }
 
@@ -779,14 +776,14 @@ export class ChemEditor {
     const s = this.undoStack.pop();
     if (!s) return;
     this.redoStack.push(this.snapshot());
-    this.doc = JSON.parse(s);
+    this.doc = JSON.parse(s) as ChemDoc;
     this.changed();
   }
   redo() {
     const s = this.redoStack.pop();
     if (!s) return;
     this.undoStack.push(this.snapshot());
-    this.doc = JSON.parse(s);
+    this.doc = JSON.parse(s) as ChemDoc;
     this.changed();
   }
 
@@ -812,7 +809,7 @@ export class ChemEditor {
     if (!this.doc.atoms.length) { this.statusEl.textContent = "Draw a structure — click to add bonds, drag to set direction, hover + keys for quick edits. Press ? for help."; return; }
     let props = null, smi = "";
     try { props = computeProperties(this.doc, this.doc.arrows.length ? "products" : "all"); } catch { /* ignore */ }
-    try { smi = this.getSmiles(); } catch (e: any) { smi = "⚠ " + (e?.message ?? e); }
+    try { smi = this.getSmiles(); } catch (e) { smi = "⚠ " + errMsg(e); }
     const add = (label: string, val: string) => { const s = this.el("span", "", this.statusEl); s.append(label + " "); appendRich(this.el("b", "", s), val); };
     if (props) {
       add(this.doc.arrows.length ? "Product" : "Formula", props.formulaHtml);
@@ -822,7 +819,7 @@ export class ChemEditor {
     const sm = this.el("span", "ce-smiles", this.statusEl);
     sm.textContent = smi;
     sm.title = "Click to copy SMILES";
-    sm.addEventListener("click", () => this.copyText(smi, "SMILES copied"));
+    sm.addEventListener("click", () => { void this.copyText(smi, "SMILES copied"); });
   }
 
   private renderOverlay() {
@@ -1027,8 +1024,9 @@ export class ChemEditor {
         return;
       }
       case "erase": {
-        this.drag = { k: "erase", snap: this.snapshot(), changed: false };
-        if (hit) { this.eraseHit(hit); (this.drag as any).changed = true; this.g = null; this.render(); }
+        const er = { k: "erase" as const, snap: this.snapshot(), changed: false };
+        this.drag = er;
+        if (hit) { this.eraseHit(hit); er.changed = true; this.g = null; this.render(); }
         return;
       }
       case "bond": {
@@ -1084,8 +1082,8 @@ export class ChemEditor {
     const d = this.drag;
     this.drag = null;
     if (!d) return;
-    if ((d.k === "move" && d.moved) || (d.k === "rotate" && d.moved) || (d.k === "arrowEnd" && d.moved)) { this.doc = JSON.parse(d.snap); this.g = null; }
-    if (d.k === "erase" && d.changed) { this.doc = JSON.parse(d.snap); this.g = null; }
+    if ((d.k === "move" && d.moved) || (d.k === "rotate" && d.moved) || (d.k === "arrowEnd" && d.moved)) { this.doc = JSON.parse(d.snap) as ChemDoc; this.g = null; }
+    if (d.k === "erase" && d.changed) { this.doc = JSON.parse(d.snap) as ChemDoc; this.g = null; }
     this.render();
   }
 
@@ -1325,7 +1323,7 @@ export class ChemEditor {
       if ((kl === "z" && e.shiftKey) || kl === "y") { stop(); this.redo(); return; }
       if (kl === "a") { stop(); this.selectAll(); return; }
       if (k === "0") { stop(); this.fit(); return; }
-      if (k === "Enter") { stop(); this.opts.onSubmit?.(); return; }
+      if (k === "Enter") { stop(); void this.opts.onSubmit?.(); return; }
       if (kl === "c" || kl === "x" || kl === "v") { e.stopPropagation(); return; } // native copy/cut/paste events
       return;
     }
@@ -1451,9 +1449,9 @@ export class ChemEditor {
     const text = e.clipboardData?.getData("text/plain") ?? "";
     e.preventDefault();
     let d: ChemDoc | null = null;
-    if (this.clip && text.trim() === this.clip.smiles) d = JSON.parse(this.clip.native);
+    if (this.clip && text.trim() === this.clip.smiles) d = JSON.parse(this.clip.native) as ChemDoc;
     else {
-      try { d = parseAny(text); } catch (err: any) { this.toast("Clipboard is not a structure"); return; }
+      try { d = parseAny(text); } catch { this.toast("Clipboard is not a structure"); return; }
     }
     if (d) this.insertDoc(d, this.clip && text.trim() === this.clip.smiles ? 0.6 : null);
   }

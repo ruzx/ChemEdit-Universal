@@ -3,6 +3,7 @@ import { App, Modal, Notice } from "obsidian";
 import { ChemEditor } from "../editor/editor";
 import type { ChemDoc } from "../chem/model";
 import { isEmpty } from "../chem/model";
+import { errMsg } from "../chem/util";
 
 export interface EditorResult {
   doc: ChemDoc;
@@ -61,7 +62,7 @@ export class ChemEditorModal extends Modal {
       injectCss: false,
       resolveName: this.o.resolveName,
       saveFile: this.o.saveFile,
-      onSubmit: () => this.doSave(),
+      onSubmit: () => { void this.doSave(); },
     });
     // Esc: let the editor consume it first (deselect / close popovers)
     this.modalEl.addEventListener("keydown", (e) => {
@@ -75,7 +76,7 @@ export class ChemEditorModal extends Modal {
     if (this.editor.isEmpty()) { new Notice("Nothing drawn yet."); return; }
     const r = this.result();
     this.close();
-    try { await this.onSave(r); } catch (e: any) { new Notice("ChemEdit: could not save – " + (e?.message ?? e)); }
+    try { await this.onSave(r); } catch (e) { new Notice("ChemEdit: could not save – " + errMsg(e)); }
   }
 
   onClose() {

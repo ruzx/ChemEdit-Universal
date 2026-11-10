@@ -62,7 +62,7 @@ export function classify(m: Mol, x: number, from: number): Sub {
       return A.h >= 2 ? "NH2" : A.h === 1 ? "NHR" : "NR2";
     }
     case "S": return nb.filter((e) => m.atoms[e.n].el === "O" && m.bonds[e.b].order === 2).length >= 2 ? "SO2R" : "SR";
-    case "F": case "Cl": case "Br": case "I": return A.el as Sub;
+    case "F": case "Cl": case "Br": case "I": return A.el;
     default: return "other";
   }
 }

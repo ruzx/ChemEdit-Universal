@@ -7,7 +7,8 @@ import type ChemEditPlugin from "./main";
 import { HteData, HFactor, HLevel, HRun, HComp, PLATES, wellIds, lvl, combos, balancedSubset, ofat, recipe, prepInfo, runYield, mainEffects, suggestBO, mlCsv, planChecks, timepoints, resOf, HTE_PRESETS, isNumericFactor } from "../chem/hte";
 import { mwOf, fmtNum } from "./calcview";
 import { parseAny } from "../chem/index";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { setSvg } from "../render/dom";
+import { str, num, isRecord } from "../chem/util";
 
 const UI = new Map<string, { tab: string; well: string | null; colorBy: string; hl?: string }>();
 const COLORS = ["#4f7cff", "#e8743b", "#19a979", "#d64ea8", "#9a6cff", "#d9a400", "#13a4b4", "#bf3a3a", "#6a8f2a", "#945ecf", "#555"];
@@ -17,7 +18,7 @@ export class HteView {
   private d: HteData;
   private ui: { tab: string; well: string | null; colorBy: string; hl?: string };
   private box!: HTMLElement;
-  constructor(raw: any, private save: () => void, uiKey: string, private plugin?: ChemEditPlugin) {
+  constructor(raw: object, private save: () => void, uiKey: string, private plugin?: ChemEditPlugin) {
     this.d = raw as HteData;
     const d = this.d;
     d.type = "hte";
@@ -45,16 +46,17 @@ export class HteView {
   /** pick a compound from the Lab compounds library / inventory (name, SMILES, MW) */
   private fromInventory(onPick: (c: { name: string; smiles?: string; mw?: number }) => void) {
     if (!this.plugin) { new Notice("Inventory not available here"); return; }
-    import("./lab").then(({ CompoundPicker }) => new CompoundPicker(this.plugin!, (c: any) => onPick({ name: c.name, ...(c.smiles ? { smiles: c.smiles } : {}), ...(c.mw ? { mw: +c.mw } : {}) })).open());
+    void import("./lab").then(({ CompoundPicker }) => new CompoundPicker(this.plugin!, (c) => onPick({ name: c.name, ...(c.smiles ? { smiles: c.smiles } : {}), ...(c.mw ? { mw: +c.mw } : {}) })).open());
   }
 
   /** convert the old matrix-eln / type: matrix format */
-  static fromMatrix(m: any): HteData {
-    const factors: HFactor[] = Object.entries(m.variables ?? {}).map(([k, v]: [string, any]) => ({ name: k, levels: (Array.isArray(v) ? v : String(v).split(",")).map((x: any) => (typeof x === "object" ? x : { name: String(x).trim() })) }));
+  static fromMatrix(m: Record<string, unknown>): HteData {
+    const vars = isRecord(m.variables) ? m.variables : {};
+    const factors: HFactor[] = Object.entries(vars).map(([k, v]) => ({ name: k, levels: (Array.isArray(v) ? (v as unknown[]) : str(v).split(",")).map((x): HLevel => (isRecord(x) ? { ...x, name: str(x.name) } : { name: str(x).trim() })) }));
     const runs: HRun[] = [];
     const ids = wellIds("96");
-    combos(factors).forEach((f, i) => runs.push({ well: ids[i], batch: 1, f, yield: Array.isArray(m.yields) ? m.yields[i] ?? null : null }));
-    return { type: "hte", title: m.title, plate: runs.length <= 6 ? "6" : runs.length <= 12 ? "12" : runs.length <= 24 ? "24" : runs.length <= 48 ? "48" : "96", scale_mmol: m.scale_mmol ?? 0.05, volume_ul: m.vol_per_vial_ul ?? 500, overage_percent: m.overage_percent ?? 10, fixed: (m.fixed_components ?? []).map((c: any) => ({ name: c.name, mw: c.mw, eq: c.eq })), factors, runs };
+    combos(factors).forEach((f, i) => runs.push({ well: ids[i], batch: 1, f, yield: Array.isArray(m.yields) ? num((m.yields as unknown[])[i]) : null }));
+    return { type: "hte", title: str(m.title) || undefined, plate: runs.length <= 6 ? "6" : runs.length <= 12 ? "12" : runs.length <= 24 ? "24" : runs.length <= 48 ? "48" : "96", scale_mmol: num(m.scale_mmol) ?? 0.05, volume_ul: num(m.vol_per_vial_ul) ?? 500, overage_percent: num(m.overage_percent) ?? 10, fixed: (Array.isArray(m.fixed_components) ? (m.fixed_components as unknown[]) : []).filter(isRecord).map((c) => ({ name: str(c.name), mw: num(c.mw) ?? undefined, eq: num(c.eq) ?? undefined })), factors, runs };
   }
 
   render(box: HTMLElement) {
@@ -74,7 +76,7 @@ export class HteView {
     setIcon(pb.createSpan(), "layout-template"); pb.createSpan({ text: "Templates" });
     pb.onclick = (e) => {
       const m = new Menu();
-      for (const p of HTE_PRESETS) m.addItem((i) => i.setTitle(`${p.title} — ${p.desc}`).onClick(() => { const apply = () => { for (const k of Object.keys(this.d)) delete (this.d as any)[k]; Object.assign(this.d, JSON.parse(JSON.stringify(p.data))); this.ui.tab = "plan"; this.save(); }; if (this.d.runs!.length && this.plugin) new ConfirmModal(this.plugin.app, "Replace this screen (including its results) with the template?", apply).open(); else apply(); }));
+      for (const p of HTE_PRESETS) m.addItem((i) => i.setTitle(`${p.title} — ${p.desc}`).onClick(() => { const apply = () => { for (const k of Object.keys(this.d)) delete (this.d as Record<string, unknown>)[k]; Object.assign(this.d, JSON.parse(JSON.stringify(p.data)) as HteData); this.ui.tab = "plan"; this.save(); }; if (this.d.runs!.length && this.plugin) new ConfirmModal(this.plugin.app, "Replace this screen (including its results) with the template?", apply).open(); else apply(); }));
       m.showAtMouseEvent(e);
     };
     this.scheme(box);
@@ -166,21 +168,23 @@ export class HteView {
   }
 
   // ---------------------------------------------------------------- inputs
-  private inp(parent: HTMLElement, obj: any, k: string, ph: string, kind: "num" | "text" = "num", cls = "") {
-    const i = parent.createEl("input", { type: "text", cls: "ce-calc-in " + (kind === "num" ? "is-num " : "") + cls, value: obj[k] ?? "", attr: { placeholder: ph, "aria-label": ph } });
+  private inp(parent: HTMLElement, objIn: object, k: string, ph: string, kind: "num" | "text" = "num", cls = "") {
+    const obj = objIn as Record<string, unknown>;
+    const i = parent.createEl("input", { type: "text", cls: "ce-calc-in " + (kind === "num" ? "is-num " : "") + cls, value: str(obj[k]), attr: { placeholder: ph, "aria-label": ph } });
     if (kind === "num") i.inputMode = "decimal";
     i.onchange = () => { const v = i.value.trim(); if (!v) delete obj[k]; else obj[k] = kind === "num" ? (isFinite(+v.replace(",", ".")) ? +v.replace(",", ".") : v) : v; this.save(); };
     i.onkeydown = (e) => { if (e.key === "Enter") i.blur(); };
     return i;
   }
-  private chk(parent: HTMLElement, obj: any, k: string, label: string) {
+  private chk(parent: HTMLElement, objIn: object, k: string, label: string) {
+    const obj = objIn as Record<string, unknown>;
     const l = parent.createEl("label", { cls: "ce-hte-chk" });
     const c = l.createEl("input", { type: "checkbox" });
     c.checked = !!obj[k];
     c.onchange = () => { if (c.checked) obj[k] = true; else delete obj[k]; this.save(); };
     l.appendText(label);
   }
-  private field(grid: HTMLElement, label: string, unit: string, obj: any, k: string, kind: "num" | "text" = "num", ph = "") {
+  private field(grid: HTMLElement, label: string, unit: string, obj: object, k: string, kind: "num" | "text" = "num", ph = "") {
     const w = grid.createDiv({ cls: "ce-calc-field" });
     const lab = w.createDiv({ cls: "ce-calc-fl" }); lab.createSpan({ text: label }); if (unit) lab.createSpan({ cls: "ce-calc-fu", text: unit });
     this.inp(w, obj, k, ph || label, kind);
@@ -273,7 +277,7 @@ export class HteView {
       const ps = fh2.createEl("select", { cls: "dropdown ce-hte-param" });
       for (const [v, l] of [["", "chemical"], ["conc_M", "concentration (M)"], ["volume_ul", "volume (µL)"], ["temperature", "temperature"], ["time", "time"]]) ps.createEl("option", { value: v, text: l });
       ps.value = f.param ?? "";
-      ps.onchange = () => { if (ps.value) f.param = ps.value as any; else delete f.param; this.save(); };
+      ps.onchange = () => { const v = ps.value; if (v === "conc_M" || v === "volume_ul" || v === "temperature" || v === "time" || v === "eq") f.param = v; else delete f.param; this.save(); };
       if (!f.param) { fh2.createSpan({ cls: "ce-hte-hint", text: "default eq" }); this.inp(fh2, f, "eq", "eq", "num", "ce-hte-small"); this.chk(fh2, f, "solid", "solids"); }
       if (isNumericFactor(f)) fh2.createSpan({ cls: "ce-hte-badge", text: "numeric" });
       const del = fh2.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Remove variable" } }); setIcon(del, "trash-2"); del.onclick = () => { d.factors!.splice(fi, 1); this.save(); };
@@ -432,7 +436,7 @@ export class HteView {
     if (pi && p) {
       const s = el.createDiv({ cls: "ce-hte-sec" });
       s.createDiv({ cls: "ce-hte-sech", text: "Step 1 · Prep solution" });
-      const lines = [`${p.name ?? "Starting material"} (${fmtNum(p.mmol, 3)} mmol${p.smiles && mwOf(p.smiles) ? `, ${fmtNum(p.mmol! * mwOf(p.smiles)!, 1)} mg` : ""})`, ...pi.reagents.map((r) => `${r.name} (${fmtNum(r.mmol, 3)} mmol, ${r.eq} eq.${r.mg ? `, ${fmtNum(r.mg, 1)} mg` : ""}${r.mg && (r as any).density ? ` = ${fmtNum(r.mg / (r as any).density, 1)} µL` : ""})`), `dissolve in ${p.volume_ml} mL ${p.solvent ?? d.solvent ?? "solvent"} → ${pi.conc.toFixed(3)} M ${p.product ?? "product"} (assumes ${p.conversion ?? 100}% conversion; check by TLC/HPLC before use)`];
+      const lines = [`${p.name ?? "Starting material"} (${fmtNum(p.mmol, 3)} mmol${p.smiles && mwOf(p.smiles) ? `, ${fmtNum(p.mmol! * mwOf(p.smiles)!, 1)} mg` : ""})`, ...pi.reagents.map((r) => `${r.name} (${fmtNum(r.mmol, 3)} mmol, ${r.eq} eq.${r.mg ? `, ${fmtNum(r.mg, 1)} mg` : ""}${r.mg && r.density ? ` = ${fmtNum(r.mg / r.density, 1)} µL` : ""})`), `dissolve in ${p.volume_ml} mL ${p.solvent ?? d.solvent ?? "solvent"} → ${pi.conc.toFixed(3)} M ${p.product ?? "product"} (assumes ${p.conversion ?? 100}% conversion; check by TLC/HPLC before use)`];
       const ul = s.createEl("ul"); for (const l of lines) ul.createEl("li", { text: l });
       const need = runs.length * (pi.perWell ?? 0) * ov;
       s.createDiv({ cls: "ce-hte-info" + (need > pi.mmol ? " is-warn" : ""), text: `Plate needs ${fmtNum(need, 3)} mmol of ${p.mmol} mmol (${runs.length} wells + ${d.overage_percent ?? 10}% overage)` });
@@ -496,7 +500,7 @@ export class HteView {
     const g = s0.createDiv({ cls: "ce-calc-fields" });
     const mw = g.createDiv({ cls: "ce-calc-field" }); mw.createDiv({ cls: "ce-calc-fl", text: "Method" });
     const ms = mw.createEl("select", { cls: "dropdown" }); for (const [k, l] of [["hplc", "HPLC/GC areas + IS"], ["yield", "enter yields"]]) ms.createEl("option", { value: k, text: l });
-    ms.value = a.method ?? "hplc"; ms.onchange = () => { a.method = ms.value as any; this.save(); };
+    ms.value = a.method ?? "hplc"; ms.onchange = () => { a.method = ms.value === "yield" ? "yield" : "hplc"; this.save(); };
     const tpw = g.createDiv({ cls: "ce-calc-field is-wide" }); tpw.createDiv({ cls: "ce-calc-fl", text: "Timepoints (comma-separated)" });
     const tpi = tpw.createEl("input", { type: "text", cls: "ce-calc-in", value: (a.timepoints ?? []).join(", "), attr: { placeholder: "e.g. 4 h, 16 h (empty = single)" } });
     tpi.onchange = () => { const v = tpi.value.split(",").map((x) => x.trim()).filter(Boolean); if (v.length) a.timepoints = v; else delete a.timepoints; this.save(); };

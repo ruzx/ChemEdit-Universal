@@ -2,8 +2,9 @@
 import { TextFileView, WorkspaceLeaf, debounce, Notice } from "obsidian";
 import type ChemEditPlugin from "./main";
 import { ChemEditor } from "../editor/editor";
-import { parseAny, docToMolfile, docToNative, docToSmiles, formatForExtension, serialize, parseSdf, writeSdf, SdfRecord, Format } from "../chem/index";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { parseAny, docToMolfile, docToNative, docToSmiles, formatForExtension, serialize, parseSdf, writeSdf, SdfRecord } from "../chem/index";
+import { setSvg } from "../render/dom";
+import { errMsg } from "../chem/util";
 
 export const CHEM_VIEW_TYPE = "chemedit-file-view";
 
@@ -28,7 +29,7 @@ export class ChemFileView extends TextFileView {
     if (f === "smiles") return docToSmiles(doc) + "\n";
     if (f === "mol" || f === "auto") return docToMolfile(doc, this.file?.basename ?? "");
     if (f === "pdb") return this.data; // PDB is read-only (use "Save as" for other formats)
-    return serialize(doc, f as Exclude<Format, "auto">);
+    return serialize(doc, f);
   }
 
   setViewData(data: string, clear: boolean): void {
@@ -44,14 +45,14 @@ export class ChemFileView extends TextFileView {
         colorAtoms: this.plugin.settings.colorAtoms,
         injectCss: false,
         resolveName: this.plugin.settings.nameLookup ? (n) => this.plugin.resolveName(n) : undefined,
-        saveFile: (n, d) => this.plugin.saveExport(n, d),
+        saveFile: (n, d) => { void this.plugin.saveExport(n, d); },
         onChange: () => save(),
       });
     }
     try {
       if (data.trim()) this.editor.setDoc(parseAny(data, formatForExtension(this.ext)), false);
-    } catch (e: any) {
-      this.editor.toast("Could not read file: " + (e?.message ?? e));
+    } catch (e) {
+      this.editor.toast("Could not read file: " + errMsg(e));
     }
     this.loading = false;
   }
@@ -59,7 +60,7 @@ export class ChemFileView extends TextFileView {
   private renderSdf(data: string) {
     this.contentEl.empty();
     this.contentEl.addClass("chemedit-sdfview");
-    try { this.records = parseSdf(data); } catch (e: any) { this.contentEl.createDiv({ cls: "chemedit-error", text: "SDF: " + (e?.message ?? e) }); return; }
+    try { this.records = parseSdf(data); } catch (e) { this.contentEl.createDiv({ cls: "chemedit-error", text: "SDF: " + errMsg(e) }); return; }
     const recs = this.records;
     const head = this.contentEl.createDiv({ cls: "ce-sdf-head" });
     head.createSpan({ text: `${recs.length} record${recs.length === 1 ? "" : "s"}` });
@@ -76,7 +77,7 @@ export class ChemFileView extends TextFileView {
       for (const [k, v] of Object.entries(r.fields).slice(0, 6)) fields.createDiv({ text: `${k}: ${v}` });
       card.title = "Double-click to edit · right-click: copy SMILES";
       card.addEventListener("dblclick", () => this.plugin.openEditor(r.doc, (res) => { recs[i] = { ...r, doc: res.doc }; this.requestSave(); this.renderSdf(this.getViewData()); }, { title: `Edit ${r.name}` }));
-      card.addEventListener("contextmenu", async (e) => { e.preventDefault(); await navigator.clipboard.writeText(docToSmiles(r.doc)); new Notice("SMILES copied"); });
+      card.addEventListener("contextmenu", (e) => { e.preventDefault(); void navigator.clipboard.writeText(docToSmiles(r.doc)).then(() => new Notice("SMILES copied")); });
       cards.push({ el: card, text: (r.name + " " + Object.entries(r.fields).map(([k, v]) => k + " " + v).join(" ")).toLowerCase() });
     });
     search.addEventListener("input", () => { const q = search.value.toLowerCase(); for (const c of cards) c.el.toggleClass("ce-hidden", !c.text.includes(q)); });

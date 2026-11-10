@@ -1,5 +1,6 @@
 // Name -> SMILES via OPSIN (IUPAC names) with PubChem fallback (trivial names).
 import { requestUrl } from "obsidian";
+import { iupacOf } from "./bridges/types";
 
 export async function resolveName(name: string): Promise<string | null> {
   const q = name.trim();
@@ -20,7 +21,7 @@ export async function resolveName(name: string): Promise<string | null> {
 export async function iupacName(smiles: string): Promise<string | null> {
   try {
     const r = await requestUrl({ url: `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/property/IUPACName/JSON`, throw: false });
-    if (r.status === 200) return r.json?.PropertyTable?.Properties?.[0]?.IUPACName ?? null;
+    if (r.status === 200) return iupacOf(r.json) || null;
   } catch { /* offline */ }
   return null;
 }

@@ -3,7 +3,8 @@
 // (```` ```chem-gallery path: Folder/ ````) — both are accepted.
 
 import type { MarkdownPostProcessorContext, App } from "obsidian";
-import { TFile } from "obsidian";
+import { TFile, parseYaml } from "obsidian";
+import { isRecord } from "../chem/util";
 
 const KEY = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/;
 
@@ -72,4 +73,9 @@ export async function writeBlockBody(app: App, el: HTMLElement, ctx: MarkdownPos
     return L.join("\n");
   });
   return true;
+}
+
+/** parseYaml that always returns a plain object (never throws). */
+export function yamlRecord(src: string): Record<string, unknown> {
+  try { const v: unknown = parseYaml(src); return isRecord(v) ? v : {}; } catch { return {}; }
 }

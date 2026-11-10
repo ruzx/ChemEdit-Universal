@@ -3,12 +3,13 @@
 
 import { App, FuzzySuggestModal, MarkdownPostProcessorContext, Menu, Notice, TFile, parseYaml, setIcon, stringifyYaml, Editor } from "obsidian";
 import type ChemEditPlugin from "./main";
-import { CALCS, CALC_BY_ID, CalcDef, Field, Plot, matrixCalc, n } from "../chem/calcs";
+import { CALCS, CALC_BY_ID, CalcDef, CalcData, Row, Field, Plot, n } from "../chem/calcs";
 import { HteView } from "./hteview";
 import { XEC_EXAMPLE, XEC_CATSYS } from "../chem/hte";
 import { computeProperties } from "../chem/props";
 import { parseAny } from "../chem/index";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { setSvg } from "../render/dom";
+import { errMsg, str, isRecord } from "../chem/util";
 
 export const LEGACY_DEFAULT: Record<string, string> = { "organic-helper": "nmr_yield", "analytical-eln": "calibration", "bio-eln": "pcr", "polymer-eln": "polymerization", "matrix-eln": "matrix" };
 const mwCache = new Map<string, number | null>();
@@ -17,9 +18,9 @@ export const mwOf = (smi: string): number | null => {
   return mwCache.get(smi)!;
 };
 
-export function fmtNum(v: any, d = 2): string {
+export function fmtNum(v: unknown, d = 2): string {
   if (v === null || v === undefined || v === "" || (typeof v === "number" && !isFinite(v))) return "–";
-  if (typeof v !== "number") return String(v);
+  if (typeof v !== "number") return str(v);
   const a = Math.abs(v);
   if (a !== 0 && (a >= 1e6 || a < 10 ** -Math.max(d, 3))) return v.toExponential(2);
   return v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: Math.min(d, a >= 100 ? 0 : d) });
@@ -52,7 +53,7 @@ function plotSvg(p: Plot): string {
 export class CalcRenderer {
   constructor(private plugin: ChemEditPlugin) {}
 
-  private async save(el: HTMLElement, ctx: MarkdownPostProcessorContext, d: any) {
+  private async save(el: HTMLElement, ctx: MarkdownPostProcessorContext, d: CalcData) {
     const info = ctx.getSectionInfo(el);
     const file = this.plugin.app.vault.getAbstractFileByPath(ctx.sourcePath);
     if (!info || !(file instanceof TFile)) { new Notice("Couldn't locate the calculator block."); return; }
@@ -67,16 +68,15 @@ export class CalcRenderer {
   }
 
   render(tag: string, source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-    let d: any;
-    try { d = parseYaml(source.replace(/smiles:\s*([^'"\s][^\n#]*)$/gm, (_m, s) => `smiles: '${String(s).trim().replace(/'/g, "''")}'`)) ?? {}; }
-    catch (e: any) { el.createDiv({ cls: "chemedit-error", text: `Calculator: ${e?.message ?? e}` }); return; }
-    if (typeof d !== "object") d = {};
-    const type = d.type ?? LEGACY_DEFAULT[tag] ?? "";
+    let d: CalcData;
+    try { const v: unknown = parseYaml(source.replace(/smiles:\s*([^'"\s][^\n#]*)$/gm, (_m: string, s: string) => `smiles: '${s.trim().replace(/'/g, "''")}'`)); d = isRecord(v) ? v : {}; }
+    catch (e) { el.createDiv({ cls: "chemedit-error", text: `Calculator: ${errMsg(e)}` }); return; }
+    const type = str(d.type) || LEGACY_DEFAULT[tag] || "";
     const box = el.createDiv({ cls: "ce-calc" });
-    const save = () => this.save(el, ctx, d);
+    const save = () => { void this.save(el, ctx, d); };
     if (type === "matrix" || type === "hte") {
       if (type === "matrix") { const conv = HteView.fromMatrix(d); for (const k of Object.keys(d)) delete d[k]; Object.assign(d, conv); }
-      new HteView(d, save, ctx.sourcePath + "|" + (d.title ?? ""), this.plugin).render(box);
+      new HteView(d, save, ctx.sourcePath + "|" + str(d.title), this.plugin).render(box);
       return;
     }
     const def = CALC_BY_ID.get(type);
@@ -84,31 +84,31 @@ export class CalcRenderer {
     this.renderDef(box, def, d, save);
   }
 
-  private header(box: HTMLElement, icon: string, title: string, group: string, d: any, save: () => void, copy: () => string) {
+  private header(box: HTMLElement, icon: string, title: string, group: string, d: CalcData, save: () => void, copy: () => string) {
     const h = box.createDiv({ cls: "ce-calc-head" });
     setIcon(h.createSpan({ cls: "ce-calc-icon" }), icon);
     const tw = h.createDiv({ cls: "ce-calc-titles" });
-    const ti = tw.createEl("input", { type: "text", cls: "ce-calc-title", value: d.title ?? title, attr: { placeholder: title, "aria-label": "Title" } });
+    const ti = tw.createEl("input", { type: "text", cls: "ce-calc-title", value: str(d.title) || title, attr: { placeholder: title, "aria-label": "Title" } });
     ti.onchange = () => { if (ti.value.trim() && ti.value !== title) d.title = ti.value.trim(); else delete d.title; save(); };
     tw.createDiv({ cls: "ce-calc-sub", text: `${group} · ${title}` });
     const act = h.createDiv({ cls: "ce-calc-actions" });
     const b = act.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Copy results (Excel)" } });
     setIcon(b, "copy");
-    b.onclick = async () => { await navigator.clipboard.writeText(copy()); new Notice("Copied — paste into Excel"); };
+    b.onclick = () => { void navigator.clipboard.writeText(copy()).then(() => new Notice("Copied — paste into Excel")); };
     const mb = act.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Change calculator" } });
     setIcon(mb, "more-vertical");
     mb.onclick = (e) => {
       const m = new Menu();
       for (const g of ["Organic", "Analytical", "Bio", "Polymer"]) {
         m.addSeparator();
-        for (const c of CALCS.filter((x) => x.group === g)) m.addItem((i) => i.setTitle(`${g} · ${c.title}`).setIcon(c.icon).onClick(() => { for (const k of Object.keys(d)) delete d[k]; Object.assign(d, { type: c.id }, JSON.parse(JSON.stringify(c.example))); save(); }));
+        for (const c of CALCS.filter((x) => x.group === g)) m.addItem((i) => i.setTitle(`${g} · ${c.title}`).setIcon(c.icon).onClick(() => { for (const k of Object.keys(d)) delete d[k]; Object.assign(d, { type: c.id }, JSON.parse(JSON.stringify(c.example)) as CalcData); save(); }));
       }
-      m.addItem((i) => i.setTitle("HTE reaction array").setIcon("grid-3x3").onClick(() => { for (const k of Object.keys(d)) delete d[k]; Object.assign(d, JSON.parse(JSON.stringify(XEC_EXAMPLE))); save(); }));
+      m.addItem((i) => i.setTitle("HTE reaction array").setIcon("grid-3x3").onClick(() => { for (const k of Object.keys(d)) delete d[k]; Object.assign(d, JSON.parse(JSON.stringify(XEC_EXAMPLE)) as CalcData); save(); }));
       m.showAtMouseEvent(e);
     };
   }
 
-  private input(parent: HTMLElement, f: Field, obj: any, live: () => void, save: () => void) {
+  private input(parent: HTMLElement, f: Field, obj: CalcData, live: () => void, save: () => void) {
     const t = f.t ?? "num";
     if (t === "bool") {
       const cb = parent.createEl("input", { type: "checkbox" });
@@ -116,7 +116,7 @@ export class CalcRenderer {
       cb.onchange = () => { if (cb.checked) obj[f.k] = true; else delete obj[f.k]; live(); save(); };
       return cb;
     }
-    const inp = parent.createEl("input", { type: "text", cls: "ce-calc-in" + (t === "num" ? " is-num" : ""), value: obj[f.k] === undefined || obj[f.k] === null ? "" : String(obj[f.k]), attr: { placeholder: f.ph ?? (t === "num" ? "–" : ""), "aria-label": f.l } });
+    const inp = parent.createEl("input", { type: "text", cls: "ce-calc-in" + (t === "num" ? " is-num" : ""), value: str(obj[f.k]), attr: { placeholder: f.ph ?? (t === "num" ? "–" : ""), "aria-label": f.l } });
     if (t === "num") inp.inputMode = "decimal";
     const set = () => {
       const v = inp.value.trim();
@@ -130,16 +130,16 @@ export class CalcRenderer {
     return inp;
   }
 
-  private renderDef(box: HTMLElement, def: CalcDef, d: any, save: () => void) {
+  private renderDef(box: HTMLElement, def: CalcDef, d: CalcData, save: () => void) {
     box.addClass(`ce-calc-${def.group.toLowerCase()}`);
     let out = def.calc(d, mwOf);
     const copy = () => {
       const lines = ["Parameter\tValue\tUnit"];
-      for (const f of def.fields) if (d[f.k] !== undefined) lines.push(`${f.l}\t${d[f.k]}\t${f.u ?? ""}`);
-      for (const r of def.results) lines.push(`${r.l}\t${typeof out.v[r.k] === "number" ? (out.v[r.k] as number).toFixed(r.d ?? 3) : out.v[r.k] ?? ""}\t${r.u ?? ""}`);
+      for (const f of def.fields) if (d[f.k] !== undefined) lines.push(`${f.l}\t${str(d[f.k])}\t${f.u ?? ""}`);
+      for (const r of def.results) { const v = out.v[r.k]; lines.push(`${r.l}\t${typeof v === "number" ? v.toFixed(r.d ?? 3) : str(v)}\t${r.u ?? ""}`); }
       for (const t of def.tables ?? []) {
         lines.push("", t.title, [...t.cols, ...(t.outs ?? [])].map((c) => c.l).join("\t"));
-        (d[t.k] ?? []).forEach((row: any, i: number) => lines.push([...t.cols.map((c) => row[c.k] ?? ""), ...(t.outs ?? []).map((o) => { const v = out.rows?.[t.k]?.[i]?.[o.k]; return typeof v === "number" ? v.toFixed(4) : v ?? ""; })].join("\t")));
+        rowsOf(d, t.k).forEach((row, i) => lines.push([...t.cols.map((c) => str(row[c.k])), ...(t.outs ?? []).map((o) => { const v = out.rows?.[t.k]?.[i]?.[o.k]; return typeof v === "number" ? v.toFixed(4) : str(v); })].join("\t")));
       }
       return lines.join("\n");
     };
@@ -161,7 +161,7 @@ export class CalcRenderer {
         }
         tile.createDiv({ cls: "ce-calc-tl", text: r.l });
         const val = tile.createDiv({ cls: "ce-calc-tv" });
-        val.createSpan({ text: r.text ? String(v ?? "–") : fmtNum(v, r.d ?? 2) });
+        val.createSpan({ text: r.text ? str(v) || "–" : fmtNum(v, r.d ?? 2) });
         if (r.u && !r.text) val.createSpan({ cls: "ce-calc-tu", text: " " + r.u });
       }
       for (const c of outCells) c.el.setText(fmtNum(out.rows?.[c.t]?.[c.i]?.[c.k], 3));
@@ -187,7 +187,7 @@ export class CalcRenderer {
       const th = sec.createDiv({ cls: "ce-calc-th" });
       th.createSpan({ text: t.title });
       const add = th.createEl("button", { cls: "ce-calc-add", text: "+ Row" });
-      add.onclick = () => { (d[t.k] = Array.isArray(d[t.k]) ? d[t.k] : []).push({}); save(); };
+      add.onclick = () => { rowsOf(d, t.k, true).push({}); save(); };
       const wrap = sec.createDiv({ cls: "ce-calc-tablewrap" });
       const tb = wrap.createEl("table", { cls: "ce-calc-table" });
       const hr = tb.createEl("thead").createEl("tr");
@@ -195,7 +195,7 @@ export class CalcRenderer {
       for (const o of t.outs ?? []) hr.createEl("th", { cls: "is-out", text: o.l });
       hr.createEl("th");
       const body = tb.createEl("tbody");
-      const list: any[] = Array.isArray(d[t.k]) ? d[t.k] : [];
+      const list = rowsOf(d, t.k);
       list.forEach((row, i) => {
         const tr = body.createEl("tr");
         for (const c of t.cols) this.input(tr.createEl("td"), c, row, paint, save);
@@ -209,75 +209,14 @@ export class CalcRenderer {
     paint();
   }
 
-  private renderMatrix(box: HTMLElement, d: any, save: () => void) {
-    box.addClass("ce-calc-hte");
-    let m = matrixCalc(d);
-    const tsv = (sep: string) => {
-      const q = (s: string) => (sep === "," ? `"${s}"` : s);
-      return [["Vial", ...m.keys, "Yield"].map(q).join(sep), ...m.combos.map((c, i) => [String(i + 1), ...m.keys.map((k) => c[k]), String(d.yields?.[i] ?? "")].map(q).join(sep))].join("\n");
-    };
-    this.header(box, "grid-3x3", "HTE reaction array", "HTE", d, save, () => tsv("\t"));
-    const grid = box.createDiv({ cls: "ce-calc-fields" });
-    for (const f of [{ k: "scale_mmol", l: "Scale / vial", u: "mmol" }, { k: "vol_per_vial_ul", l: "Volume / vial", u: "µL" }, { k: "overage_percent", l: "Overage", u: "%" }] as Field[]) {
-      const w = grid.createDiv({ cls: "ce-calc-field" });
-      const lab = w.createDiv({ cls: "ce-calc-fl" }); lab.createSpan({ text: f.l }); lab.createSpan({ cls: "ce-calc-fu", text: f.u! });
-      this.input(w, f, d, () => {}, save);
-    }
-    const vs = box.createDiv({ cls: "ce-calc-tablesec" });
-    const vh = vs.createDiv({ cls: "ce-calc-th" }); vh.createSpan({ text: "Variables (comma-separated values)" });
-    const addV = vh.createEl("button", { cls: "ce-calc-add", text: "+ Variable" });
-    addV.onclick = () => { d.variables = d.variables ?? {}; let k = "variable"; let i = 1; while (d.variables[k]) k = `variable${++i}`; d.variables[k] = ["A", "B"]; save(); };
-    for (const k of Object.keys(d.variables ?? {})) {
-      const r = vs.createDiv({ cls: "ce-calc-varrow" });
-      const kn = r.createEl("input", { type: "text", value: k, cls: "ce-calc-in ce-calc-varname" });
-      const vals = r.createEl("input", { type: "text", value: (Array.isArray(d.variables[k]) ? d.variables[k] : [d.variables[k]]).map((x: any) => (typeof x === "object" ? x.name : x)).join(", "), cls: "ce-calc-in" });
-      kn.onchange = () => { const v = d.variables[k]; delete d.variables[k]; if (kn.value.trim()) d.variables[kn.value.trim()] = v; save(); };
-      vals.onchange = () => { d.variables[k] = vals.value.split(",").map((s) => s.trim()).filter(Boolean); d.yields = []; save(); };
-      const del = r.createEl("button", { cls: "clickable-icon" }); setIcon(del, "x");
-      del.onclick = () => { delete d.variables[k]; d.yields = []; save(); };
-    }
-    const tiles = box.createDiv({ cls: "ce-calc-results" });
-    const tile = (l: string, v: string, hero = false) => { const t = tiles.createDiv({ cls: "ce-calc-tile" + (hero ? " is-hero" : "") }); t.createDiv({ cls: "ce-calc-tl", text: l }); t.createDiv({ cls: "ce-calc-tv", text: v }); };
-    tile("Reactions", String(m.combos.length), true);
-    tile("Mix for", fmtNum(m.calcRxns, 1) + " rxn");
-    tile("Master mix", fmtNum(m.totalVolUl / 1000, 2) + " mL");
-    if (m.fixed.length) {
-      const fs = box.createDiv({ cls: "ce-calc-tablesec" });
-      fs.createDiv({ cls: "ce-calc-th", text: "Master mix — fixed components" });
-      const t = fs.createDiv({ cls: "ce-calc-tablewrap" }).createEl("table", { cls: "ce-calc-table" });
-      const hr = t.createEl("tr"); for (const h of ["Component", "mmol", "Weigh (mg)"]) hr.createEl("th", { text: h });
-      for (const f of m.fixed) { const r = t.createEl("tr"); r.createEl("td", { text: f.name }); r.createEl("td", { text: fmtNum(f.mmol, 3) }); r.createEl("td", { cls: "is-out", text: fmtNum(f.mg, 1) }); }
-    }
-    const as = box.createDiv({ cls: "ce-calc-tablesec" });
-    const ah = as.createDiv({ cls: "ce-calc-th" }); ah.createSpan({ text: "Array — enter yields" });
-    const csv = ah.createEl("button", { cls: "ce-calc-add", text: "CSV (ML)" });
-    csv.onclick = async () => { await navigator.clipboard.writeText(tsv(",")); new Notice("CSV copied"); };
-    const t = as.createDiv({ cls: "ce-calc-tablewrap" }).createEl("table", { cls: "ce-calc-table ce-calc-matrix" });
-    const hr = t.createEl("tr"); for (const h of ["#", ...m.keys, "Yield %"]) hr.createEl("th", { text: h });
-    if (!Array.isArray(d.yields)) d.yields = [];
-    m.combos.forEach((c, i) => {
-      const r = t.createEl("tr");
-      r.createEl("td", { cls: "ce-calc-vial", text: String(i + 1) });
-      for (const k of m.keys) r.createEl("td", { text: c[k] });
-      const td = r.createEl("td");
-      const y = n(d.yields[i]);
-      if (y !== null) td.addClass(y >= 80 ? "is-good" : y >= 40 ? "is-mid" : "is-bad");
-      const inp = td.createEl("input", { type: "text", cls: "ce-calc-in is-num", value: y === null ? "" : String(y), attr: { placeholder: "–" } });
-      inp.inputMode = "decimal";
-      inp.onchange = () => { while (d.yields.length < m.combos.length) d.yields.push(null); d.yields[i] = n(inp.value); save(); };
-    });
-    const best = m.combos.map((c, i) => ({ c, y: n(d.yields[i]) })).filter((x) => x.y !== null).sort((a, b) => b.y! - a.y!)[0];
-    if (best) box.createDiv({ cls: "ce-calc-note", text: `★ Best: ${m.keys.map((k) => best.c[k]).join(" / ")} — ${best.y}%` });
-  }
-
-  private renderPicker(box: HTMLElement, d: any, save: () => void) {
+  private renderPicker(box: HTMLElement, d: CalcData, save: () => void) {
     box.createDiv({ cls: "ce-calc-sub", text: "Choose a calculator:" });
     const g = box.createDiv({ cls: "ce-calc-picker" });
     for (const c of CALCS) {
       const b = g.createEl("button", { cls: "ce-calc-pick" });
       setIcon(b.createSpan(), c.icon);
       b.createSpan({ text: c.title });
-      b.onclick = () => { Object.assign(d, { type: c.id }, JSON.parse(JSON.stringify(c.example))); save(); };
+      b.onclick = () => { Object.assign(d, { type: c.id }, JSON.parse(JSON.stringify(c.example)) as CalcData); save(); };
     }
   }
 }
@@ -294,3 +233,12 @@ export class CalcPicker extends FuzzySuggestModal<{ id: string; title: string; g
 
 export function insertCalc(app: App, editor: Editor) { new CalcPicker(app, (b) => editor.replaceSelection(b)).open(); }
 export function calcBlock(id: string) { if (id === "hte" || id === "matrix") return "```chem-calc\n" + stringifyYaml(XEC_CATSYS) + "```\n"; const ex = CALC_BY_ID.get(id)!.example; return "```chem-calc\n" + stringifyYaml({ type: id, ...ex }) + "```\n"; }
+
+/** Table rows of a calculator (created on demand when `create`). */
+function rowsOf(d: CalcData, k: string, create = false): Row[] {
+  const v = d[k];
+  if (Array.isArray(v)) return v as Row[];
+  const r: Row[] = [];
+  if (create) d[k] = r;
+  return r;
+}

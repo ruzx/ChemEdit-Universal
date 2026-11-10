@@ -1,8 +1,9 @@
+import { str } from "./util";
 // HTE planner engine: per-well recipes, stock solutions, plate layouts, screening designs
 // (full factorial, balanced subset, one-factor-at-a-time) and Bayesian optimisation
 // (Gaussian process + expected improvement, batch via "kriging believer").
 
-export interface HLevel { name: string; smiles?: string; mw?: number; eq?: number; density?: number; solid?: boolean; [k: string]: any }
+export interface HLevel { name: string; smiles?: string; mw?: number; eq?: number; density?: number; solid?: boolean; components?: unknown; [k: string]: unknown }
 export interface HComp { name: string; role?: string; smiles?: string; mw?: number; eq?: number; density?: number; conc_M?: number; solid?: boolean }
 /** param: a level value that changes the set-up instead of adding a chemical (conc_M, volume_ul, temperature, time) */
 export interface HFactor { name: string; eq?: number; solid?: boolean; param?: "conc_M" | "volume_ul" | "temperature" | "time" | "eq"; levels: Array<HLevel | string> }
@@ -13,7 +14,7 @@ export interface HRun extends HRes { well: string; batch?: number; f: Record<str
 export interface HteData {
   type: "hte"; title?: string; temperature?: string; time?: string; atmosphere?: string; product?: { name?: string; smiles?: string }; plate?: string | number; scale_mmol?: number; volume_ul?: number; overage_percent?: number; solvent?: string;
   stock_ul?: number; prep?: HPrep; fixed?: HFixed[]; factors?: HFactor[]; runs?: HRun[]; batch_size?: number;
-  analysis?: { method?: "yield" | "hplc"; rf?: number; is_eq?: number; timepoints?: string[] }; [k: string]: any;
+  analysis?: { method?: "yield" | "hplc"; rf?: number; is_eq?: number; timepoints?: string[] }; [k: string]: unknown;
 }
 
 export const PLATES: Record<string, { rows: number; cols: number; label: string }> = {
@@ -25,7 +26,7 @@ export const wellIds = (plate: string) => { const p = PLATES[plate] ?? PLATES["2
 export const lvl = (l: HLevel | string | number): HLevel => (typeof l === "object" && l ? l : { name: String(l) });
 export const numVal = (s: string): number | null => { const m = /^\s*(-?\d+(?:[.,]\d+)?)/.exec(String(s)); return m ? parseFloat(m[1].replace(",", ".")) : null; };
 export const isNumericFactor = (f: HFactor) => !!f.param || (f.levels.length > 1 && f.levels.map(lvl).every((l) => numVal(l.name) !== null && !l.mw && !l.smiles && !l.components));
-const num = (v: any) => (v === undefined || v === null || v === "" ? null : isFinite(+v) ? +v : null);
+const num = (v: unknown) => (v === undefined || v === null || v === "" ? null : isFinite(Number(v)) ? Number(v) : null);
 
 export function combos(factors: HFactor[]): Array<Record<string, string>> {
   let out: Array<Record<string, string>> = [{}];
@@ -187,7 +188,7 @@ function encode(c: Record<string, string>, factors: HFactor[]): number[] {
   });
 }
 function chol(A: number[][]): number[][] | null {
-  const n = A.length, L = A.map(() => new Array(n).fill(0));
+  const n = A.length, L = A.map(() => new Array<number>(n).fill(0));
   for (let i = 0; i < n; i++) for (let j = 0; j <= i; j++) {
     let s = A[i][j];
     for (let k = 0; k < j; k++) s -= L[i][k] * L[j][k];
@@ -267,7 +268,7 @@ export function suggestBO(d: HteData, n: number): { picks: Suggestion[]; ranked:
   const Xb = X.slice(), Yb = Y.slice();
   let pool = untested.slice();
   for (let i = 0; i < n && pool.length; i++) {
-    const sc = pool.map(score(gp!, Math.max(...Yb))).sort((a, b) => b.ei - a.ei);
+    const sc = pool.map(score(gp, Math.max(...Yb))).sort((a, b) => b.ei - a.ei);
     const top = sc[0];
     picks.push(ranked.find((r) => key(r.f, factors) === key(top.f, factors)) ?? top);
     Xb.push(encode(top.f, factors)); Yb.push((top.mean - mu) / sdY);
@@ -281,7 +282,7 @@ export function mlCsv(d: HteData): string {
   const factors = d.factors ?? [];
   const oneHot = factors.flatMap((f) => f.levels.map(lvl).map((l) => `${f.name}=${l.name}`));
   const head = ["well", "batch", ...factors.map((f) => f.name), ...oneHot, "yield"];
-  const q = (s: any) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const q = (s: unknown) => `"${str(s).replace(/"/g, '""')}"`;
   const rows = (d.runs ?? []).filter((r) => !r.skip).map((r) => [r.well, r.batch ?? 1, ...factors.map((f) => r.f[f.name]), ...factors.flatMap((f) => f.levels.map(lvl).map((l) => (r.f[f.name] === l.name ? 1 : 0))), runYield(d, r) ?? ""]);
   return [head.map(q).join(","), ...rows.map((r) => r.map((v, i) => (i < 2 + factors.length ? q(v) : v)).join(","))].join("\n");
 }

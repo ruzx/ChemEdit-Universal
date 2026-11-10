@@ -5,22 +5,28 @@ export type FieldType = "num" | "text" | "bool" | "smiles" | "select";
 export interface Field { k: string; l: string; u?: string; t?: FieldType; opts?: string[]; ph?: string }
 export interface TableDef { k: string; title: string; cols: Field[]; outs?: Field[] }
 export interface Result { k: string; l: string; u?: string; d?: number; hero?: boolean; grade?: [number, number]; lowGood?: boolean; text?: boolean }
-export interface CalcOut { v: Record<string, any>; rows?: Record<string, Array<Record<string, any>>>; notes?: string[]; plot?: Plot }
+export type OutVal = number | string | null | undefined;
+export interface CalcOut { v: Record<string, OutVal>; rows?: Record<string, Array<Record<string, OutVal>>>; notes?: string[]; plot?: Plot }
+/** One table row as stored in YAML (values are whatever the user typed). */
+export type Row = Record<string, unknown>;
+/** Calculator inputs as stored in YAML. */
+export type CalcData = Record<string, unknown>;
 export interface Plot { kind: "xy"; extendX?: boolean; points: Array<{ x: number; y: number; off?: boolean }>; line?: { m: number; b: number }; xl: string; yl: string; step?: boolean }
 export interface CalcDef {
   id: string; title: string; group: "Organic" | "Analytical" | "Bio" | "Polymer" | "HTE"; icon: string; desc: string;
-  fields: Field[]; tables?: TableDef[]; results: Result[]; example: Record<string, any>;
-  calc: (d: any, mw: (smiles: string) => number | null) => CalcOut;
+  fields: Field[]; tables?: TableDef[]; results: Result[]; example: CalcData;
+  calc: (d: CalcData, mw: (smiles: string) => number | null) => CalcOut;
 }
 
-export const n = (v: any): number | null => {
+export const n = (v: unknown): number | null => {
   if (v === undefined || v === null || v === "" || v === false) return null;
   const x = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
   return isFinite(x) ? x : null;
 };
-const z = (v: any, def = 0) => n(v) ?? def;
+const z = (v: unknown, def = 0) => n(v) ?? def;
+const str = (v: unknown) => (v === undefined || v === null ? "" : typeof v === "object" ? "" : String(v as string | number | boolean));
 const F = 96485.332;
-const rows = (d: any, k: string): any[] => (Array.isArray(d[k]) ? d[k] : (d[k] = []));
+const rows = (d: CalcData, k: string): Row[] => { const v = d[k]; if (Array.isArray(v)) return v as Row[]; const r: Row[] = []; d[k] = r; return r; };
 
 export function linreg(pts: Array<{ x: number; y: number }>) {
   const N = pts.length;
@@ -88,9 +94,10 @@ export const CALCS: CalcDef[] = [
     example: { titrant_name: "n-BuLi", standard_name: "diphenylacetic acid", standard_mw: 212.24, stoichiometry_ratio: 1, label_molarity: 2.5, trials: [{ mass_mg: 106.1, vol_ml: 0.21 }, { mass_mg: 105.3, vol_ml: 0.205 }] },
     calc: (d) => {
       const r = z(d.stoichiometry_ratio, 1), mw = z(d.standard_mw, 1);
-      if (!rows(d, "trials").length && n(d.standard_mass_mg)) d.trials.push({ mass_mg: d.standard_mass_mg, vol_ml: d.titrant_vol_ml });
-      const out = d.trials.map((t: any) => ({ M: n(t.mass_mg) && n(t.vol_ml) ? ((z(t.mass_mg) / mw) * r) / z(t.vol_ml) : null }));
-      const ms = out.map((o: any) => o.M).filter((x: any) => x !== null) as number[];
+      const trials = rows(d, "trials");
+      if (!trials.length && n(d.standard_mass_mg)) trials.push({ mass_mg: d.standard_mass_mg, vol_ml: d.titrant_vol_ml });
+      const out = trials.map((t) => ({ M: n(t.mass_mg) && n(t.vol_ml) ? ((z(t.mass_mg) / mw) * r) / z(t.vol_ml) : null }));
+      const ms = out.map((o) => o.M).filter((x): x is number => x !== null);
       const mean = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null;
       const sd = ms.length > 1 && mean ? Math.sqrt(ms.reduce((a, b) => a + (b - mean) ** 2, 0) / (ms.length - 1)) : null;
       return { v: { mean, rsd: sd !== null && mean ? (100 * sd) / mean : null, vsLabel: mean && n(d.label_molarity) ? (100 * mean) / z(d.label_molarity) : null }, rows: { trials: out } };
@@ -131,7 +138,7 @@ export const CALCS: CalcDef[] = [
     fields: [{ k: "compound", l: "Compound", t: "text" }, { k: "smiles", l: "SMILES (→ MW)", t: "smiles" }, { k: "mw", l: "MW", u: "g/mol" }, { k: "purity", l: "Purity", u: "%" }, { k: "density", l: "Density (liquids)", u: "g/mL" }, { k: "molarity_M", l: "Target", u: "M" }, { k: "volume_ml", l: "Final volume", u: "mL" }],
     results: [{ k: "mmol", l: "Amount", u: "mmol", d: 3 }, { k: "mass", l: "Weigh", u: "mg", d: 1, hero: true }, { k: "vol", l: "…or measure", u: "µL", d: 0 }],
     example: { compound: "NaOH", mw: 40.0, purity: 98, molarity_M: 1, volume_ml: 100 },
-    calc: (d, mw) => { const M = n(d.mw) ?? (d.smiles ? mw(d.smiles) : null); const mmol = z(d.molarity_M) * z(d.volume_ml); const mass = M ? (mmol * M) / (z(d.purity, 100) / 100) : null; return { v: { mmol, mass, vol: mass && n(d.density) ? mass / z(d.density) : null } }; },
+    calc: (d, mw) => { const M = n(d.mw) ?? (d.smiles ? mw(str(d.smiles)) : null); const mmol = z(d.molarity_M) * z(d.volume_ml); const mass = M ? (mmol * M) / (z(d.purity, 100) / 100) : null; return { v: { mmol, mass, vol: mass && n(d.density) ? mass / z(d.density) : null } }; },
   },
   {
     id: "dilution", title: "Dilution (C₁V₁ = C₂V₂)", group: "Organic", icon: "droplets", desc: "Stock volume for a target concentration.",
@@ -153,11 +160,11 @@ export const CALCS: CalcDef[] = [
     example: { units: "µg/mL", analyte: "product", standards: [{ name: "S1", conc: 5, area: 1020 }, { name: "S2", conc: 10, area: 2050 }, { name: "S3", conc: 25, area: 5110 }, { name: "S4", conc: 50, area: 10190 }], samples: [{ name: "crude", dilution_factor: 10, area: 3300 }] },
     calc: (d) => {
       const st = rows(d, "standards"), sa = rows(d, "samples");
-      const pts = st.map((s: any) => ({ x: z(s.conc), y: z(s.area), off: !!s.exclude })).filter((p: any, i: number) => n(st[i].conc) !== null && n(st[i].area) !== null);
-      const lr = linreg(pts.filter((p: any) => !p.off));
-      const res = st.map((s: any) => ({ res: lr && n(s.conc) && n(s.area) ? (100 * (z(s.area) - (lr.m * z(s.conc) + lr.b))) / z(s.area) : null }));
-      const smp = sa.map((s: any) => { const vial = lr && lr.m && n(s.area) !== null ? (z(s.area) - lr.b) / lr.m : null; return { vial, orig: vial !== null ? vial * z(s.dilution_factor, 1) : null }; });
-      return { v: { eq: lr ? `y = ${lr.m.toPrecision(4)}·x ${lr.b >= 0 ? "+" : "−"} ${Math.abs(lr.b).toPrecision(4)}` : "–", r2: lr?.r2 ?? null, lod: lr && lr.m ? (3.3 * lr.syx) / lr.m : null, loq: lr && lr.m ? (10 * lr.syx) / lr.m : null }, rows: { standards: res, samples: smp }, plot: { kind: "xy", points: pts, line: lr ? { m: lr.m, b: lr.b } : undefined, xl: `conc. (${d.units ?? ""})`, yl: "response" } };
+      const pts = st.map((s) => ({ x: z(s.conc), y: z(s.area), off: !!s.exclude })).filter((p, i: number) => n(st[i].conc) !== null && n(st[i].area) !== null);
+      const lr = linreg(pts.filter((p) => !p.off));
+      const res = st.map((s) => ({ res: lr && n(s.conc) && n(s.area) ? (100 * (z(s.area) - (lr.m * z(s.conc) + lr.b))) / z(s.area) : null }));
+      const smp = sa.map((s) => { const vial = lr && lr.m && n(s.area) !== null ? (z(s.area) - lr.b) / lr.m : null; return { vial, orig: vial !== null ? vial * z(s.dilution_factor, 1) : null }; });
+      return { v: { eq: lr ? `y = ${lr.m.toPrecision(4)}·x ${lr.b >= 0 ? "+" : "−"} ${Math.abs(lr.b).toPrecision(4)}` : "–", r2: lr?.r2 ?? null, lod: lr && lr.m ? (3.3 * lr.syx) / lr.m : null, loq: lr && lr.m ? (10 * lr.syx) / lr.m : null }, rows: { standards: res, samples: smp }, plot: { kind: "xy", points: pts, line: lr ? { m: lr.m, b: lr.b } : undefined, xl: `conc. (${str(d.units)})`, yl: "response" } };
     },
   },
   {
@@ -167,8 +174,8 @@ export const CALCS: CalcDef[] = [
     results: [{ k: "eq", l: "Regression", text: true }, { k: "r2", l: "R²", d: 4, grade: [0.995, 0.98] }, { k: "unknown", l: "Unknown conc.", d: 3, hero: true }],
     example: { units: "ppm", dilution_factor: 1, standards: [{ added_conc: 0, area: 210 }, { added_conc: 1, area: 405 }, { added_conc: 2, area: 612 }, { added_conc: 4, area: 1004 }] },
     calc: (d) => {
-      const pts = rows(d, "standards").filter((s: any) => n(s.added_conc) !== null && n(s.area) !== null).map((s: any) => ({ x: z(s.added_conc), y: z(s.area), off: !!s.exclude }));
-      const lr = linreg(pts.filter((p: any) => !p.off));
+      const pts = rows(d, "standards").filter((s) => n(s.added_conc) !== null && n(s.area) !== null).map((s) => ({ x: z(s.added_conc), y: z(s.area), off: !!s.exclude }));
+      const lr = linreg(pts.filter((p) => !p.off));
       return { v: { eq: lr ? `y = ${lr.m.toPrecision(4)}·x + ${lr.b.toPrecision(4)}` : "–", r2: lr?.r2 ?? null, unknown: lr && lr.m ? Math.abs(lr.b / lr.m) * z(d.dilution_factor, 1) : null }, plot: { kind: "xy", extendX: true, points: pts, line: lr ? { m: lr.m, b: lr.b } : undefined, xl: "added", yl: "response" } };
     },
   },
@@ -178,7 +185,7 @@ export const CALCS: CalcDef[] = [
     tables: [{ k: "targets", title: "Targets", cols: [{ k: "target_conc", l: "Target conc." }, { k: "target_vol", l: "Final vol." }], outs: [{ k: "stock_vol", l: "Stock" }, { k: "diluent_vol", l: "Diluent" }] }],
     results: [{ k: "total", l: "Total stock needed", d: 3, hero: true }],
     example: { stock_conc: 1000, stock_units: "µg/mL", diluent: "MeCN", targets: [{ target_conc: 100, target_vol: 1 }, { target_conc: 50, target_vol: 1 }, { target_conc: 10, target_vol: 1 }] },
-    calc: (d) => { const s = z(d.stock_conc); const out = rows(d, "targets").map((t: any) => { const sv = s ? (z(t.target_conc) * z(t.target_vol)) / s : null; return { stock_vol: sv, diluent_vol: sv !== null ? z(t.target_vol) - sv : null }; }); return { v: { total: out.reduce((a: number, o: any) => a + (o.stock_vol ?? 0), 0) }, rows: { targets: out } }; },
+    calc: (d) => { const s = z(d.stock_conc); const out = rows(d, "targets").map((t) => { const sv = s ? (z(t.target_conc) * z(t.target_vol)) / s : null; return { stock_vol: sv, diluent_vol: sv !== null ? z(t.target_vol) - sv : null }; }); return { v: { total: out.reduce((a: number, o) => a + (o.stock_vol ?? 0), 0) }, rows: { targets: out } }; },
   },
   {
     id: "acid_base_prep", title: "Acid / base from concentrate", group: "Analytical", icon: "test-tube", desc: "Volume of concentrated reagent for a target molarity.",
@@ -193,7 +200,7 @@ export const CALCS: CalcDef[] = [
     tables: [{ k: "gradient", title: "Gradient", cols: [{ k: "time", l: "Time (min)" }, { k: "b_percent", l: "% B (or °C)" }] }],
     results: [{ k: "runtime", l: "Run time", u: "min", d: 1, hero: true }, { k: "solvent", l: "Solvent per run", u: "mL", d: 1 }],
     example: { column: "C18, 150×4.6 mm, 5 µm", mobile_a: "H₂O + 0.1% HCOOH", mobile_b: "MeCN", flow_rate: 1, temp: 30, detection: "UV 254 nm", injection_ul: 5, gradient: [{ time: 0, b_percent: 5 }, { time: 10, b_percent: 95 }, { time: 12, b_percent: 95 }, { time: 12.5, b_percent: 5 }, { time: 15, b_percent: 5 }] },
-    calc: (d) => { const g = rows(d, "gradient").filter((r: any) => n(r.time) !== null); const rt = g.length ? Math.max(...g.map((r: any) => z(r.time))) : null; return { v: { runtime: rt, solvent: rt !== null && n(d.flow_rate) ? rt * z(d.flow_rate) : null }, plot: g.length > 1 ? { kind: "xy", points: g.map((r: any) => ({ x: z(r.time), y: z(r.b_percent) })), xl: "time (min)", yl: "% B", step: true } : undefined }; },
+    calc: (d) => { const g = rows(d, "gradient").filter((r) => n(r.time) !== null); const rt = g.length ? Math.max(...g.map((r) => z(r.time))) : null; return { v: { runtime: rt, solvent: rt !== null && n(d.flow_rate) ? rt * z(d.flow_rate) : null }, plot: g.length > 1 ? { kind: "xy", points: g.map((r) => ({ x: z(r.time), y: z(r.b_percent) })), xl: "time (min)", yl: "% B", step: true } : undefined }; },
   },
 
   // ------------------------------------------------------------ BIO
@@ -206,15 +213,15 @@ export const CALCS: CalcDef[] = [
     calc: (d) => {
       const comps = rows(d, "components"); const tot = z(d.total_volume_ul, 25); const cr = z(d.reactions, 1) * (1 + z(d.overage_percent, 10) / 100);
       let used = 0, water = -1;
-      const out = comps.map((c: any, i: number) => {
-        if (/water|h2o|h₂o/i.test(c.name ?? "")) { water = i; return { v1: null, mm: null }; }
+      const out = comps.map((c, i: number) => {
+        if (/water|h2o|h₂o/i.test(str(c.name))) { water = i; return { v1: null, mm: null }; }
         let v = n(c.volume_ul);
-        if (v === null) { const s = parseFloat(String(c.stock ?? "").replace(/[^\d.]/g, "")), f = parseFloat(String(c.final ?? "").replace(/[^\d.]/g, "")); v = s > 0 && f >= 0 ? (f / s) * tot : 0; }
+        if (v === null) { const s = parseFloat(str(c.stock).replace(/[^\d.]/g, "")), f = parseFloat(str(c.final).replace(/[^\d.]/g, "")); v = s > 0 && f >= 0 ? (f / s) * tot : 0; }
         used += v;
         return { v1: v, mm: c.add_to_mm_separately ? null : v * cr };
       });
       if (water >= 0) { const w = Math.max(0, tot - used); out[water] = { v1: w, mm: w * cr }; }
-      return { v: { calcRxns: cr, mmTotal: out.reduce((a: number, o: any) => a + (o.mm ?? 0), 0) }, rows: { components: out }, notes: used > tot ? ["Components exceed the reaction volume!"] : [] };
+      return { v: { calcRxns: cr, mmTotal: out.reduce((a: number, o) => a + (o.mm ?? 0), 0) }, rows: { components: out }, notes: used > tot ? ["Components exceed the reaction volume!"] : [] };
     },
   },
   {
@@ -223,7 +230,7 @@ export const CALCS: CalcDef[] = [
     tables: [{ k: "components", title: "Components", cols: [{ k: "name", l: "Reagent", t: "text" }, { k: "mw", l: "MW" }, { k: "target_M", l: "Conc. (M)" }, { k: "target_mg_ml", l: "…or mg/mL" }], outs: [{ k: "g", l: "Weigh (g)" }] }],
     results: [{ k: "total", l: "Total solids", u: "g", d: 2, hero: true }],
     example: { volume_L: 1, ph: "7.4", components: [{ name: "Tris", mw: 121.14, target_M: 0.05 }, { name: "NaCl", mw: 58.44, target_M: 0.15 }] },
-    calc: (d) => { const V = z(d.volume_L, 1); const out = rows(d, "components").map((c: any) => ({ g: n(c.target_M) && n(c.mw) ? z(c.target_M) * V * z(c.mw) : n(c.target_mg_ml) ? z(c.target_mg_ml) * V : null })); return { v: { total: out.reduce((a: number, o: any) => a + (o.g ?? 0), 0) }, rows: { components: out } }; },
+    calc: (d) => { const V = z(d.volume_L, 1); const out = rows(d, "components").map((c) => ({ g: n(c.target_M) && n(c.mw) ? z(c.target_M) * V * z(c.mw) : n(c.target_mg_ml) ? z(c.target_mg_ml) * V : null })); return { v: { total: out.reduce((a: number, o) => a + (o.g ?? 0), 0) }, rows: { components: out } }; },
   },
   {
     id: "cell_seeding", title: "Cell seeding", group: "Bio", icon: "grid-3x3", desc: "Suspension and media volumes.",
@@ -238,7 +245,7 @@ export const CALCS: CalcDef[] = [
     tables: [{ k: "samples", title: "Libraries", cols: [{ k: "name", l: "Library", t: "text" }, { k: "length_bp", l: "Length (bp)" }, { k: "conc_ng_ul", l: "ng/µL" }], outs: [{ k: "nM", l: "nM" }, { k: "vol", l: "Pool µL" }] }],
     results: [{ k: "total", l: "Pool volume", u: "µL", d: 1, hero: true }],
     example: { target_fmol_per_sample: 100, samples: [{ name: "L1", length_bp: 420, conc_ng_ul: 12.1 }, { name: "L2", length_bp: 390, conc_ng_ul: 8.4 }] },
-    calc: (d) => { const t = z(d.target_fmol_per_sample, 100); const out = rows(d, "samples").map((s: any) => { const nM = n(s.conc_ng_ul) && n(s.length_bp) ? (z(s.conc_ng_ul) * 1e6) / (z(s.length_bp) * 660) : null; return { nM, vol: nM ? t / nM : null }; }); return { v: { total: out.reduce((a: number, o: any) => a + (o.vol ?? 0), 0) }, rows: { samples: out } }; },
+    calc: (d) => { const t = z(d.target_fmol_per_sample, 100); const out = rows(d, "samples").map((s) => { const nM = n(s.conc_ng_ul) && n(s.length_bp) ? (z(s.conc_ng_ul) * 1e6) / (z(s.length_bp) * 660) : null; return { nM, vol: nM ? t / nM : null }; }); return { v: { total: out.reduce((a: number, o) => a + (o.vol ?? 0), 0) }, rows: { samples: out } }; },
   },
   {
     id: "protein_quant", title: "Protein A280", group: "Bio", icon: "scan", desc: "Concentration from absorbance (Beer–Lambert).",
@@ -246,7 +253,7 @@ export const CALCS: CalcDef[] = [
     tables: [{ k: "samples", title: "Samples", cols: [{ k: "name", l: "Protein", t: "text" }, { k: "A280", l: "A280" }, { k: "ext_coeff", l: "ε (M⁻¹cm⁻¹)" }, { k: "mw", l: "MW (Da)" }, { k: "dilution", l: "Dilution" }], outs: [{ k: "uM", l: "µM" }, { k: "mgml", l: "mg/mL" }] }],
     results: [],
     example: { path_length_cm: 1, samples: [{ name: "BSA", A280: 0.66, ext_coeff: 43824, mw: 66430, dilution: 1 }] },
-    calc: (d) => { const l = z(d.path_length_cm, 1); return { v: {}, rows: { samples: rows(d, "samples").map((s: any) => { const M = n(s.A280) !== null && n(s.ext_coeff) ? (z(s.A280) / (z(s.ext_coeff) * l)) * z(s.dilution, 1) : null; return { uM: M !== null ? M * 1e6 : null, mgml: M !== null && n(s.mw) ? M * z(s.mw) : null }; }) } }; },
+    calc: (d) => { const l = z(d.path_length_cm, 1); return { v: {}, rows: { samples: rows(d, "samples").map((s) => { const M = n(s.A280) !== null && n(s.ext_coeff) ? (z(s.A280) / (z(s.ext_coeff) * l)) * z(s.dilution, 1) : null; return { uM: M !== null ? M * 1e6 : null, mgml: M !== null && n(s.mw) ? M * z(s.mw) : null }; }) } }; },
   },
   {
     id: "oligo_analyzer", title: "Oligo analyzer", group: "Bio", icon: "dna", desc: "Length, GC, Tm, MW, reverse complement, translation.",
@@ -254,7 +261,7 @@ export const CALCS: CalcDef[] = [
     results: [{ k: "len", l: "Length", u: "nt", d: 0 }, { k: "gc", l: "GC", u: "%", d: 1 }, { k: "tm", l: "Tm", u: "°C", d: 1, hero: true }, { k: "mw", l: "MW", u: "g/mol", d: 0 }, { k: "rc", l: "Reverse complement", text: true }, { k: "tr", l: "Translation (frame 1)", text: true }],
     example: { sequence: "ATGGCTAGCAAGGAGGAGCTGTTCACC", na_mM: 50 },
     calc: (d) => {
-      const s = String(d.sequence ?? "").toUpperCase().replace(/[^ACGTU]/g, "");
+      const s = str(d.sequence).toUpperCase().replace(/[^ACGTU]/g, "");
       if (!s) return { v: {} };
       const c = (x: string) => (s.match(new RegExp(x, "g")) ?? []).length;
       const g = c("G"), cc = c("C"), a = c("A"), t = c("T") + c("U");
@@ -280,7 +287,7 @@ export const CALCS: CalcDef[] = [
     tables: [{ k: "steps", title: "Steps", cols: [{ k: "done", l: "✓", t: "bool" }, { k: "text", l: "Step", t: "text" }, { k: "time", l: "Time", t: "text" }] }],
     results: [{ k: "progress", l: "Progress", u: "%", d: 0, hero: true, grade: [100, 50] }],
     example: { steps: [{ text: "Dry glassware" }, { text: "Weigh reagents" }, { text: "Start reaction" }] },
-    calc: (d) => { const s = rows(d, "steps"); return { v: { progress: s.length ? (100 * s.filter((x: any) => x.done === true || x.done === "true").length) / s.length : 0 } }; },
+    calc: (d) => { const s = rows(d, "steps"); return { v: { progress: s.length ? (100 * s.filter((x) => x.done === true || x.done === "true").length) / s.length : 0 } }; },
   },
 
   // ------------------------------------------------------------ POLYMER
@@ -295,10 +302,10 @@ export const CALCS: CalcDef[] = [
     results: [{ k: "chains", l: "Chains", u: "mmol", d: 4 }, { k: "mn", l: "Theoretical Mn", u: "g/mol", d: 0, hero: true }, { k: "mnRatio", l: "GPC / theory", d: 2 }],
     example: { target_dp: 100, target_mass_g: 2, conversion: 90, monomers: [{ name: "MMA", smiles: "C=C(C)C(=O)OC", eq: 1, density: 0.94 }], agents: [{ name: "CPDB", mw: 221.34 }], initiators: [{ name: "AIBN", smiles: "CC(C)(C#N)N=NC(C)(C)C#N", ratio_to_cta: 0.2 }] },
     calc: (d, mw) => {
-      const fill = (r: any) => { const m = n(r.mw) ?? (r.smiles ? mw(r.smiles) : null); return m; };
+      const fill = (r: Row) => { const m = n(r.mw) ?? (r.smiles ? mw(str(r.smiles)) : null); return m; };
       const mons = rows(d, "monomers"), ini = rows(d, "initiators"), ag = rows(d, "agents");
-      const eqT = mons.reduce((a: number, m: any) => a + z(m.eq, 1), 0) || 1;
-      const avgMw = mons.reduce((a: number, m: any) => a + (z(m.eq, 1) / eqT) * (fill(m) ?? 0), 0);
+      const eqT = mons.reduce((a: number, m) => a + z(m.eq, 1), 0) || 1;
+      const avgMw = mons.reduce((a: number, m) => a + (z(m.eq, 1) / eqT) * (fill(m) ?? 0), 0);
       const monMmol = avgMw ? (z(d.target_mass_g) * 1000) / avgMw : 0;
       const chains = z(d.target_dp) ? monMmol / z(d.target_dp) : 0;
       const endMw = ag[0] ? fill(ag[0]) ?? 0 : ini[0] ? fill(ini[0]) ?? 0 : 0;
@@ -306,9 +313,9 @@ export const CALCS: CalcDef[] = [
       return {
         v: { chains, mn: avgMw ? mn : null, mnRatio: n(d.Mn_gpc) && avgMw ? z(d.Mn_gpc) / mn : null },
         rows: {
-          monomers: mons.map((m: any) => { const mm = (monMmol * z(m.eq, 1)) / eqT, M = fill(m); return { mmol: mm, g: M ? (mm * M) / 1000 : null, ml: M && n(m.density) ? (mm * M) / 1000 / z(m.density) : null }; }),
-          initiators: ini.map((r: any) => { const mm = chains * z(r.ratio_to_cta, ag.length ? 0.2 : 1), M = fill(r); return { mmol: mm, mg: M ? mm * M : null }; }),
-          agents: ag.map((r: any) => { const M = fill(r); return { mmol: chains, mg: M ? chains * M : null }; }),
+          monomers: mons.map((m) => { const mm = (monMmol * z(m.eq, 1)) / eqT, M = fill(m); return { mmol: mm, g: M ? (mm * M) / 1000 : null, ml: M && n(m.density) ? (mm * M) / 1000 / z(m.density) : null }; }),
+          initiators: ini.map((r) => { const mm = chains * z(r.ratio_to_cta, ag.length ? 0.2 : 1), M = fill(r); return { mmol: mm, mg: M ? mm * M : null }; }),
+          agents: ag.map((r) => { const M = fill(r); return { mmol: chains, mg: M ? chains * M : null }; }),
         },
       };
     },
@@ -319,29 +326,8 @@ export const CALCS: CalcDef[] = [
     tables: [{ k: "components", title: "Components", cols: [{ k: "name", l: "Component", t: "text" }, { k: "phr", l: "phr" }, { k: "density", l: "ρ (g/mL)" }], outs: [{ k: "wt", l: "wt %" }, { k: "g", l: "g" }, { k: "ml", l: "mL" }] }],
     results: [{ k: "phr", l: "Σ phr", d: 1 }, { k: "mass", l: "Batch", u: "g", d: 1, hero: true }],
     example: { target_mass_g: 100, components: [{ name: "Epoxy resin", phr: 100, density: 1.16 }, { name: "Hardener", phr: 32, density: 0.95 }, { name: "Filler", phr: 15 }] },
-    calc: (d) => { const c = rows(d, "components"); const tot = c.reduce((a: number, x: any) => a + z(x.phr), 0); const M = z(d.target_mass_g, 100); return { v: { phr: tot, mass: M }, rows: { components: c.map((x: any) => { const w = tot ? z(x.phr) / tot : 0; return { wt: 100 * w, g: M * w, ml: n(x.density) ? (M * w) / z(x.density) : null }; }) } }; },
+    calc: (d) => { const c = rows(d, "components"); const tot = c.reduce((a: number, x) => a + z(x.phr), 0); const M = z(d.target_mass_g, 100); return { v: { phr: tot, mass: M }, rows: { components: c.map((x) => { const w = tot ? z(x.phr) / tot : 0; return { wt: 100 * w, g: M * w, ml: n(x.density) ? (M * w) / z(x.density) : null }; }) } }; },
   },
 ];
 
 export const CALC_BY_ID = new Map(CALCS.map((c) => [c.id, c]));
-
-// ------------------------------------------------------------ HTE matrix (custom layout)
-
-export interface MatrixOut { combos: Array<Record<string, string>>; keys: string[]; calcRxns: number; totalVolUl: number; fixed: Array<{ name: string; mmol: number; mg: number | null }> }
-export function matrixCalc(d: any): MatrixOut {
-  const vars: Record<string, any[]> = d.variables && typeof d.variables === "object" ? d.variables : (d.variables = {});
-  const keys = Object.keys(vars);
-  let combos: Array<Record<string, string>> = [{}];
-  for (const k of keys) {
-    const vals = (Array.isArray(vars[k]) ? vars[k] : String(vars[k]).split(",")).map((v: any) => (typeof v === "object" && v ? v.name : String(v).trim())).filter(Boolean);
-    const next: Array<Record<string, string>> = [];
-    for (const c of combos) for (const v of vals.length ? vals : ["–"]) next.push({ ...c, [k]: v });
-    combos = next;
-  }
-  const over = n(d.overage_percent) ?? 10;
-  const calcRxns = combos.length * (1 + over / 100);
-  const scale = n(d.scale_mmol) ?? 0.05;
-  const fixed = (Array.isArray(d.fixed_components) ? d.fixed_components : []).map((c: any) => { const mmol = scale * (n(c.eq) ?? 1) * calcRxns; return { name: c.name ?? "", mmol, mg: n(c.mw) ? mmol * n(c.mw)! : null }; });
-  return { combos, keys, calcRxns, totalVolUl: calcRxns * (n(d.vol_per_vial_ul) ?? 500), fixed };
-}
-export const MATRIX_EXAMPLE = { title: "Ligand / base screen", scale_mmol: 0.05, vol_per_vial_ul: 500, overage_percent: 10, variables: { ligand: ["XPhos", "SPhos", "dppf"], base: ["K2CO3", "Cs2CO3"] }, fixed_components: [{ name: "Aryl bromide", mw: 157.01, eq: 1 }, { name: "Boronic acid", mw: 121.93, eq: 1.5 }], yields: [] };

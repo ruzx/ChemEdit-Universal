@@ -1,5 +1,5 @@
 // ChemEdit (new) — lightweight chemical structure editor for Obsidian.
-import { Editor, MarkdownView, Menu, Notice, Plugin, TFile, normalizePath } from "obsidian";
+import { App, Editor, MarkdownPostProcessorContext, MarkdownView, Menu, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { ChemEditSettings, ChemEditSettingTab, DEFAULT_SETTINGS, BlockFormat } from "./settings";
 import { ChemEditorModal, EditorModalOptions, EditorResult } from "./modal";
 import { StructureView, ChemFileEmbed, BLOCK_LANGS, contentFor, BlockLang } from "./render";
@@ -25,7 +25,8 @@ import { TlcModal } from "./tlc";
 import { PhotoModal, StepModal, elnCtxForFile } from "./labbook";
 import { ElnRenderer, PromptModal, experimentTemplate, createExperimentFile, nextExperimentCode, elnFromDoc } from "./eln";
 import { ElnData } from "../chem/eln";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { setSvg } from "../render/dom";
+import { fileStamp, isoDate } from "./dates";
 
 export { embedDataInSvg, extractDataFromSvg, ChemFileView };
 
@@ -42,8 +43,8 @@ export default class ChemEditPlugin extends Plugin {
     await this.loadSettings();
     this.view = new StructureView(this);
     this.api = buildChemEditAPI(this);
-    (window as any).ChemEditAPI = this.api;
-    this.register(() => { if ((window as any).ChemEditAPI === this.api) delete (window as any).ChemEditAPI; });
+    window.ChemEditAPI = this.api;
+    this.register(() => { if (window.ChemEditAPI === this.api) delete window.ChemEditAPI; });
 
     this.addSettingTab(new ChemEditSettingTab(this.app, this));
 
@@ -54,7 +55,7 @@ export default class ChemEditPlugin extends Plugin {
     }
     this.registerMarkdownPostProcessor((el, ctx) => this.view.inline(el, ctx));
     const eln = new ElnRenderer(this);
-    for (const [tag, fn] of [["eln", (s: string, el: HTMLElement, ctx: any) => eln.render(s, el, ctx)], ["eln-list", (s: string, el: HTMLElement, ctx: any) => eln.renderList(s, el, ctx)]] as const) {
+    for (const [tag, fn] of [["eln", (s: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => eln.render(s, el, ctx)], ["eln-list", (s: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => eln.renderList(s, el, ctx)]] as const) {
       try { this.registerMarkdownCodeBlockProcessor(tag, fn); } catch { console.warn(`ChemEdit: \`\`\`${tag} already handled by another plugin.`); }
     }
 
@@ -81,7 +82,7 @@ export default class ChemEditPlugin extends Plugin {
     this.addCommand({ id: "open-lab-synthesis", name: "Open synthesis map", callback: () => this.openLab("synthesis") });
     this.addCommand({ id: "insert-synthesis-map", name: "Insert synthesis map", editorCallback: (ed) => ed.replaceSelection("```synthesis-map\nview: sequences\nheight: 520\n```\n") });
     this.registerMarkdownCodeBlockProcessor("synthesis-map", (src, el, ctx) => ctx.addChild(new SynthesisMapBlock(this, el, src, ctx.sourcePath)));
-    const reg = (tag: string, fn: (src: string, el: HTMLElement, ctx: any) => void) => { try { this.registerMarkdownCodeBlockProcessor(tag, fn); } catch { console.warn(`ChemEdit: \`\`\`${tag} already handled by another plugin.`); } };
+    const reg = (tag: string, fn: (src: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => void) => { try { this.registerMarkdownCodeBlockProcessor(tag, fn); } catch { console.warn(`ChemEdit: \`\`\`${tag} already handled by another plugin.`); } };
     reg("synthesis-plan", (src, el, ctx) => ctx.addChild(new SynthesisPlanBlock(this, el, src, ctx)));
     for (const k of ["chem-gallery", "eln-gallery", "chem-db"] as const) reg(k, (src, el, ctx) => ctx.addChild(new LabEmbedBlock(this, el, src, ctx, k)));
     reg("chem-nmr", (src, el, ctx) => ctx.addChild(new NmrBlock(this, el, src, ctx)));
@@ -99,7 +100,7 @@ export default class ChemEditPlugin extends Plugin {
     const withNote = (fn: (c: Awaited<ReturnType<typeof elnCtxForFile>>) => void) => (checking: boolean) => {
       const f = this.app.workspace.getActiveFile();
       if (!f || f.extension !== "md") return false;
-      if (!checking) elnCtxForFile(this, f).then(fn);
+      if (!checking) void elnCtxForFile(this, f).then(fn);
       return true;
     };
     this.addCommand({ id: "eln-tlc", name: "Lab book: TLC from photo", checkCallback: withNote((c) => new TlcModal(c).open()) });
@@ -117,9 +118,9 @@ export default class ChemEditPlugin extends Plugin {
     }
 
     // double-click on an embedded ChemEdit SVG image → edit
-    this.registerDomEvent(document, "dblclick", (e) => this.onDocDblClick(e as MouseEvent), true);
+    this.registerDomEvent(document, "dblclick", (e) => { void this.onDocDblClick(e); }, true);
     // editor context menu
-    this.registerEvent((this.app.workspace as any).on("editor-menu", (menu: Menu, editor: Editor) => {
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor) => {
       menu.addItem((i) => i.setTitle("Insert chemical structure").setIcon("hexagon").onClick(() => this.drawNew()));
       menu.addItem((i) => i.setTitle("Insert lab calculator…").setIcon("calculator").onClick(() => insertCalc(this.app, editor)));
       const f = this.app.workspace.getActiveFile();
@@ -139,20 +140,20 @@ export default class ChemEditPlugin extends Plugin {
   }
 
   onunload() {
-    const reg = (this.app as any).embedRegistry;
+    const reg = embedRegistry(this.app);
     for (const ext of this.registeredEmbeds) try { reg?.unregisterExtension?.(ext); } catch { /* */ }
   }
 
-  async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); this.settings.labFolders = { ...(this.settings.labFolders ?? {}) }; }
+  async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<ChemEditSettings> | null); this.settings.labFolders = { ...(this.settings.labFolders ?? {}) }; }
   async saveSettings() { await this.saveData(this.settings); }
-  refreshAll() { /* re-render happens on note re-open; force current view refresh */ (this.app.workspace as any).getActiveViewOfType?.(MarkdownView)?.previewMode?.rerender?.(true); }
+  refreshAll() { /* force the current note to re-render */ this.app.workspace.getActiveViewOfType(MarkdownView)?.previewMode?.rerender(true); }
 
   private registerEmbeds() {
-    const reg = (this.app as any).embedRegistry;
+    const reg = embedRegistry(this.app);
     if (!reg?.registerExtension) return;
     for (const ext of FILE_EXTS) {
       try {
-        reg.registerExtension(ext, (ctx: any, file: TFile) => new ChemFileEmbed(this, ctx.containerEl, file));
+        reg.registerExtension(ext, (ctx: { containerEl: HTMLElement }, file: TFile) => new ChemFileEmbed(this, ctx.containerEl, file));
         this.registeredEmbeds.push(ext);
       } catch { /* another plugin owns it */ }
     }
@@ -180,7 +181,7 @@ export default class ChemEditPlugin extends Plugin {
   async saveExport(name: string, data: string | Blob) {
     const folder = normalizePath(this.settings.svgFolder || "/");
     if (folder !== "/" && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
-    const stamp = window.moment ? window.moment().format("YYYYMMDD_HHmmss") : String(Date.now());
+    const stamp = fileStamp();
     const ext = name.split(".").pop();
     let path = normalizePath(`${folder === "/" ? "" : folder + "/"}${name.replace(/\.[^.]+$/, "")}_${stamp}.${ext}`);
     if (typeof data === "string") await this.app.vault.create(path, data);
@@ -193,18 +194,18 @@ export default class ChemEditPlugin extends Plugin {
   async openLab(page: PageId = "overview", focus?: string) {
     const ex = this.app.workspace.getLeavesOfType(LAB_VIEW)[0];
     const leaf = ex ?? this.app.workspace.getLeaf("tab");
-    if (ex) await (ex as any).loadIfDeferred?.();
+    if (ex) await ex.loadIfDeferred();
     const v = leaf.view as unknown;
     if (ex && v instanceof LabView) v.go(page, focus);
     else await leaf.setViewState({ type: LAB_VIEW, active: true, state: { page, focus } });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   newExperiment(folder?: string, data: ElnData = { reactants: [], products: [] }) {
     const dir = folder ?? this.settings.elnFolder;
     const suggestion = nextExperimentCode(this.app, dir, this.settings.elnPrefix || "EXP");
     new PromptModal(this.app, "New experiment", "Experiment code", suggestion, async (code) => {
-      const date = window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10);
+      const date = isoDate();
       const sections = this.settings.elnSections.split(",").map((x) => x.trim()).filter(Boolean);
       const f = await createExperimentFile(this.app, dir, code, experimentTemplate(code, date, data, sections, this.settings.elnTemplate));
       await this.app.workspace.getLeaf(false).openFile(f);
@@ -218,7 +219,7 @@ export default class ChemEditPlugin extends Plugin {
       colorAtoms: this.settings.colorAtoms,
       pngScale: this.settings.pngScale ?? 4,
       resolveName: this.settings.nameLookup ? (n) => this.resolveName(n) : undefined,
-      saveFile: (name, data) => this.saveExport(name, data),
+      saveFile: (name, data) => { void this.saveExport(name, data); },
       ...o,
     }).open();
   }
@@ -241,7 +242,7 @@ export default class ChemEditPlugin extends Plugin {
       if (f) ed.replaceSelection(`![[${f.path}]]\n`);
       return;
     }
-    const out = contentFor(format as BlockLang, r);
+    const out = contentFor(format, r);
     const cur = ed.getCursor();
     const needsNl = ed.getLine(cur.line).trim().length > 0 && cur.ch > 0;
     ed.replaceSelection(`${needsNl ? "\n" : ""}\`\`\`${out.lang}\n${out.content}\n\`\`\`\n`);
@@ -253,7 +254,7 @@ export default class ChemEditPlugin extends Plugin {
     if (existing) { await this.app.vault.modify(existing, svg); return existing; }
     let folder = normalizePath(this.settings.svgFolder || "/");
     if (folder !== "/" && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
-    const stamp = window.moment ? window.moment().format("YYYYMMDD_HHmmss") : String(Date.now());
+    const stamp = fileStamp();
     let path = normalizePath(`${folder === "/" ? "" : folder + "/"}Structure_${stamp}.svg`);
     let n = 1;
     while (this.app.vault.getAbstractFileByPath(path)) path = path.replace(/(_\d+)?\.svg$/, `_${n++}.svg`);
@@ -314,7 +315,7 @@ export default class ChemEditPlugin extends Plugin {
   private async onDocDblClick(e: MouseEvent) {
     const img = e.target as HTMLElement;
     if (!img || img.tagName !== "IMG") return;
-    const embed = img.closest(".internal-embed, .image-embed") as HTMLElement | null;
+    const embed = img.closest(".internal-embed, .image-embed");
     const src = embed?.getAttribute("src") ?? img.getAttribute("alt") ?? "";
     if (!/\.svg(\||#|$)/i.test(src) && !/\.svg(\?|$)/i.test(img.getAttribute("src") ?? "")) return;
     const link = src.split("|")[0].split("#")[0];
@@ -367,3 +368,11 @@ export default class ChemEditPlugin extends Plugin {
 
 function safeContract(doc: ChemDoc) { try { return contractAbbreviations(doc); } catch { return doc; } }
 function safeSmiles(doc: ChemDoc) { try { return docToSmiles(doc); } catch { return ""; } }
+
+declare global {
+  interface Window { ChemEditAPI?: ChemEditAPI }
+}
+
+interface EmbedRegistry { registerExtension?: (ext: string, fn: (ctx: { containerEl: HTMLElement }, file: TFile) => unknown) => void; unregisterExtension?: (ext: string) => void }
+/** Obsidian's (private) embed registry, if present. */
+function embedRegistry(app: App): EmbedRegistry | undefined { return (app as unknown as { embedRegistry?: EmbedRegistry }).embedRegistry; }

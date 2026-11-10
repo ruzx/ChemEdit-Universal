@@ -32,15 +32,16 @@ declare module "obsidian" {
     replaceSelection(s: string): void; replaceRange(s: string, from: EditorPosition, to?: EditorPosition): void;
     getSelection(): string; setCursor(p: EditorPosition | number, ch?: number): void; getRange(a: EditorPosition, b: EditorPosition): string;
   }
-  export class View extends Component { app: App; containerEl: HTMLElement; leaf: WorkspaceLeaf; getViewType(): string; getDisplayText(): string; getIcon(): string; }
+  export interface ViewStateResult { history: boolean }
+  export class View extends Component { setState(state: unknown, result: ViewStateResult): Promise<void>; getState(): Record<string, unknown>; app: App; containerEl: HTMLElement; leaf: WorkspaceLeaf; getViewType(): string; getDisplayText(): string; getIcon(): string; }
   export class ItemView extends View { contentEl: HTMLElement; constructor(leaf: WorkspaceLeaf); onOpen(): Promise<void>; onClose(): Promise<void>; addAction(icon: string, title: string, cb: (e: MouseEvent) => any): HTMLElement; }
   export class FileView extends ItemView { file: TFile | null; allowNoFile: boolean; }
   export class TextFileView extends FileView {
     data: string; requestSave: () => void;
     getViewData(): string; setViewData(data: string, clear: boolean): void; clear(): void; save(clear?: boolean): Promise<void>;
   }
-  export class MarkdownView extends TextFileView { editor: Editor; getMode(): string; }
-  export class WorkspaceLeaf { view: View; openFile(f: TFile, s?: any): Promise<void>; setViewState(s: any): Promise<void>; }
+  export class MarkdownView extends TextFileView { editor: Editor; getMode(): string; previewMode: { rerender(full?: boolean): void }; }
+  export class WorkspaceLeaf { loadIfDeferred(): Promise<void>; view: View; openFile(f: TFile, s?: any): Promise<void>; setViewState(s: any): Promise<void>; }
   export class Workspace extends Events {
     getActiveViewOfType<T extends View>(t: abstract new (...a: any[]) => T): T | null;
     getActiveFile(): TFile | null; getLeavesOfType(t: string): WorkspaceLeaf[]; revealLeaf(l: WorkspaceLeaf): Promise<void>; getLeaf(newLeaf?: boolean | string): WorkspaceLeaf; activeLeaf: WorkspaceLeaf | null; openLinkText(link: string, src: string, newLeaf?: boolean | string): Promise<void>;
@@ -107,7 +108,7 @@ interface HTMLElement {
   createSpan(o?: DomElementInfo | string): HTMLSpanElement;
   empty(): void; addClass(...c: string[]): void; removeClass(...c: string[]): void; toggleClass(c: string, v: boolean): void; setText(t: string): void; appendText(t: string): void; setAttr(k: string, v: string): void; setCssStyles(s: Partial<CSSStyleDeclaration>): void;
 }
-interface Window { moment: any }
+
 
 declare function createEl<K extends keyof HTMLElementTagNameMap>(tag: K, o?: string | { cls?: string | string[]; text?: string; attr?: Record<string, string | number | boolean | null>; type?: string; value?: string; placeholder?: string }, cb?: (el: HTMLElementTagNameMap[K]) => void): HTMLElementTagNameMap[K];
 declare function createDiv(o?: string | { cls?: string | string[]; text?: string; attr?: Record<string, string | number | boolean | null> }, cb?: (el: HTMLDivElement) => void): HTMLDivElement;

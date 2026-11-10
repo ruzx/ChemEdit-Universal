@@ -6,6 +6,7 @@ import { App, Modal, Notice, TFile, normalizePath } from "obsidian";
 import type ChemEditPlugin from "./main";
 import { ElnData, ElnCalc, CalcRow, fmtMass, fmtMmol, fmtVol, fmtEq } from "../chem/eln";
 import { parseAny } from "../chem/index";
+import { str } from "../chem/util";
 
 export type SectionKey = "remarks" | "equipment" | "experimental" | "workup" | "analytical" | "conclusion";
 export const SECTIONS: Record<SectionKey, { title: string; re: RegExp }> = {
@@ -20,10 +21,8 @@ const SECTION_LABEL: Record<SectionKey, string> = { remarks: "Remarks", equipmen
 
 export interface ElnCtx { plugin: ChemEditPlugin; file: TFile; data: ElnData; calc: ElnCalc }
 
-const m = () => (window as any).moment?.();
-export const nowHM = () => m()?.format("HH:mm") ?? new Date().toTimeString().slice(0, 5);
-export const dateStamp = () => m()?.format("DD.MM.YYYY (ddd)") ?? new Date().toLocaleDateString();
-export const fileStamp = () => m()?.format("YYYYMMDD_HHmmss") ?? String(Date.now());
+import { nowHM, dateStamp, fileStamp } from "./dates";
+export { nowHM, dateStamp, fileStamp };
 
 /** Insert text at the end of a section (creating it if missing). Numbered steps continue the section's numbering. */
 export function insertInSection(text: string, key: SectionKey, opts: { numbered?: boolean; date?: boolean } = {}) {
@@ -285,7 +284,7 @@ export class ColumnModal extends BuilderModal {
     this.sys = { ...(ctx.plugin.settings.lastSystem ?? DEFAULT_SYSTEM) };
   }
   build(body: HTMLElement) {
-    chips(body, ["manual", "automated"], (v) => { this.mode = v as any; this.onOpenSection(); }, { selected: this.mode });
+    chips(body, ["manual", "automated"], (v) => { this.mode = v === "automated" ? "automated" : "manual"; this.onOpenSection(); }, { selected: this.mode });
     const grid = body.createDiv({ cls: "ce-lb-grid" });
     const field = (k: keyof typeof this.f, ph: string) => {
       const i = grid.createEl("input", { type: "text", placeholder: ph, value: this.f[k] });
@@ -496,7 +495,7 @@ export class ElectroModal extends BuilderModal {
   constructor(ctx: ElnCtx) {
     super(ctx, "experimental", "Electrolysis");
     const d = ctx.data;
-    this.s = { F: String(d.charge_F ?? "2.0"), mA: String(d.current_mA ?? ""), area: String(d.area_cm2 ?? ""), anode: d.anode ?? "graphite", cathode: d.cathode ?? "graphite", electrolyte: d.electrolyte ?? "nBu₄NBF₄", conc: String(d.electrolyte_M ?? "0.05"), rpm: "300", vStart: "", vEnd: "", temp: d.temperature ?? "room temperature" };
+    this.s = { F: String(d.charge_F ?? "2.0"), mA: String(d.current_mA ?? ""), area: String(d.area_cm2 ?? ""), anode: str(d.anode) || "graphite", cathode: str(d.cathode) || "graphite", electrolyte: str(d.electrolyte) || "nBu₄NBF₄", conc: String(d.electrolyte_M ?? "0.05"), rpm: "300", vStart: "", vEnd: "", temp: d.temperature ?? "room temperature" };
   }
   build(body: HTMLElement) {
     const grid = body.createDiv({ cls: "ce-lb-grid" });

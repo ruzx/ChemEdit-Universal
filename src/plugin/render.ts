@@ -2,9 +2,10 @@
 import { Component, MarkdownPostProcessorContext, Menu, Notice, TFile, setIcon } from "obsidian";
 import type ChemEditPlugin from "./main";
 import { ChemDoc, isEmpty } from "../chem/model";
-import { parseAny, docToSmiles, docToMolfile, docToNative, computeProperties, formatForExtension, serialize, Format } from "../chem/index";
+import { parseAny, docToSmiles, docToMolfile, docToNative, computeProperties, formatForExtension, serialize } from "../chem/index";
 import { EditorResult } from "./modal";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { setSvg, setRich } from "../render/dom";
+import { errMsg } from "../chem/util";
 
 export type BlockLang = "smiles" | "mol" | "chemedit";
 export const BLOCK_LANGS: Record<string, BlockLang> = { smiles: "smiles", smi: "smiles", mol: "mol", molfile: "mol", chemedit: "chemedit" };
@@ -49,10 +50,10 @@ export class StructureView {
     });
     if (!opts.inline) {
       const bar = wrap.createDiv({ cls: "chemedit-toolbar" });
-      const mk = (icon: string, title: string, fn: (e: MouseEvent) => void) => {
+      const mk = (icon: string, title: string, fn: (e: MouseEvent) => void | Promise<void>) => {
         const b = bar.createEl("button", { cls: "clickable-icon", attr: { "aria-label": title } });
         setIcon(b, icon);
-        b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); fn(e); };
+        b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); void fn(e); };
       };
       if (opts.onEdit) mk("pencil", "Edit structure", () => opts.onEdit!());
       mk("copy", "Copy SMILES", () => this.copy(docToSmiles(doc), "SMILES copied"));
@@ -72,7 +73,7 @@ export class StructureView {
     m.addItem((i) => i.setTitle("Copy SVG").setIcon("image").onClick(() => this.copy(this.plugin.svgFor(doc, { forFile: true }), "SVG copied")));
     m.addItem((i) => i.setTitle("Copy formula & MW").setIcon("info").onClick(() => {
       const p = computeProperties(doc, doc.arrows.length ? "products" : "all");
-      if (p) this.copy(`${p.formula}, MW ${p.mw.toFixed(2)}, exact mass ${p.exactMass.toFixed(4)}`, "Copied");
+      if (p) void this.copy(`${p.formula}, MW ${p.mw.toFixed(2)}, exact mass ${p.exactMass.toFixed(4)}`, "Copied");
     }));
     m.addSeparator();
     m.addItem((i) => i.setTitle("Save as SVG file").setIcon("save").onClick(async () => {
@@ -92,7 +93,7 @@ export class StructureView {
     let doc: ChemDoc | null = null;
     let err = "";
     try { doc = parseAny(source, lang === "smiles" ? "smiles" : lang === "mol" ? "mol" : "chemedit"); }
-    catch (e: any) { err = e?.message ?? String(e); }
+    catch (e) { err = errMsg(e); }
     const edit = () => this.plugin.openEditor(doc && !isEmpty(doc) ? doc : source, async (r) => {
       await this.writeBack(el, ctx, lang, r);
     }, { title: "Edit structure" });
@@ -109,8 +110,8 @@ export class StructureView {
         for (const [l, title] of [["smiles", "Convert block to SMILES"], ["chemedit", "Convert block to ChemEdit drawing"], ["mol", "Convert block to Molfile"]] as const) {
           if (l === lang) continue;
           m.addItem((i) => i.setTitle(title).setIcon("replace").onClick(() => {
-            const d = doc!;
-            this.writeBack(el, ctx, l, { doc: d, smiles: docToSmiles(d), molfile: docToMolfile(d), native: docToNative(d), hasText: d.texts.length > 0 });
+            const d = doc;
+            void this.writeBack(el, ctx, l, { doc: d, smiles: docToSmiles(d), molfile: docToMolfile(d), native: docToNative(d), hasText: d.texts.length > 0 });
           }));
         }
       },
@@ -163,7 +164,7 @@ export class StructureView {
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);
     for (const node of nodes) {
       const text = node.textContent ?? "";
-      const frag = document.createDocumentFragment();
+      const frag = el.ownerDocument.createDocumentFragment();
       let last = 0;
       re.lastIndex = 0;
       let m: RegExpExecArray | null;
@@ -212,13 +213,13 @@ export class ChemFileEmbed extends Component {
     this.containerEl.addClass("chemedit-embed");
     let doc: ChemDoc;
     try { doc = parseAny(data, formatForExtension(this.file.extension)); }
-    catch (e: any) { this.containerEl.createDiv({ cls: "chemedit-error", text: `⚠ ${this.file.name}: ${e?.message ?? e}` }); return; }
+    catch (e) { this.containerEl.createDiv({ cls: "chemedit-error", text: `⚠ ${this.file.name}: ${errMsg(e)}` }); return; }
     this.plugin.view.mount(this.containerEl, doc, {
       onEdit: () => this.plugin.openEditor(doc, async (r) => {
         const f = formatForExtension(this.file.extension);
-        const out = f === "chemedit" ? r.native : f === "smiles" ? r.smiles : f === "mol" || f === "auto" ? r.molfile : serialize(r.doc, f as Exclude<Format, "auto">);
+        const out = f === "chemedit" ? r.native : f === "smiles" ? r.smiles : f === "mol" || f === "auto" ? r.molfile : serialize(r.doc, f);
         await this.plugin.app.vault.modify(this.file, out);
-        this.loadFile();
+        void this.loadFile();
       }, { title: `Edit ${this.file.name}` }),
     });
   }

@@ -2,6 +2,8 @@
 import { Notice, TFile, ItemView, setIcon, requestUrl } from 'obsidian';
 import type ChemEditPlugin from '../main';
 import { extractDataFromSvg } from '../svgmeta';
+import { fileStamp } from "../dates";
+import { excalidrawOf, excalidrawFileOf, iupacOf, type ExElement } from "./types";
 
 
 export function initExcalidrawBridge(plugin: ChemEditPlugin) {
@@ -18,17 +20,18 @@ function injectExcalidrawUI(plugin: ChemEditPlugin) {
     const excalidrawUI = container.querySelector('.excalidraw');
     if (!excalidrawUI) return;
 
-    let toolsContainer = container.querySelector('.chemedit-excalidraw-tools') as HTMLElement;
+    let toolsContainer = container.querySelector<HTMLElement>('.chemedit-excalidraw-tools');
     if (!toolsContainer) {
-        toolsContainer = createDiv({ cls: 'chemedit-excalidraw-tools ce-bridge-tools' });
-        excalidrawUI.appendChild(toolsContainer);
+        const tools = createDiv({ cls: 'chemedit-excalidraw-tools ce-bridge-tools' });
+        toolsContainer = tools;
+        excalidrawUI.appendChild(tools);
 
-        const createBtn = (iconName: string, title: string, isMain: boolean, onClick: () => void) => {
+        const createBtn = (iconName: string, title: string, isMain: boolean, onClick: () => void | Promise<void>) => {
             const btn = createEl('button', { cls: isMain ? 'ce-bridge-btn is-main' : 'ce-bridge-btn' });
             btn.title = title;
             setIcon(btn, iconName);
-            btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(); };
-            toolsContainer.appendChild(btn);
+            btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); void onClick(); };
+            tools.appendChild(btn);
         };
 
         // THE TOOLBAR
@@ -41,22 +44,22 @@ function injectExcalidrawUI(plugin: ChemEditPlugin) {
     if (!container.dataset.chemeditDblClick) {
         container.dataset.chemeditDblClick = "true";
         container.addEventListener('dblclick', (e) => {
-            const ea = (plugin.app as any).plugins?.plugins?.['obsidian-excalidraw-plugin']?.ea;
+            const ea = excalidrawOf(plugin.app);
             if (!ea) return;
             ea.setView(view);
 
             window.setTimeout(() => {
                 const selected = ea.getViewSelectedElements();
                 if (selected.length === 1 && selected[0].type === "image") {
-                    handleAction(plugin, view, 'draw', true, selected[0]);
+                    void handleAction(plugin, view, 'draw', true, selected[0]);
                 }
             }, 50);
         }, true);
     }
 }
 
-async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw'|'props'|'copy'|'web', isDblClick: boolean = false, targetEl: any = null) {
-    const ea = (plugin.app as any).plugins?.plugins?.['obsidian-excalidraw-plugin']?.ea;
+async function handleAction(plugin: ChemEditPlugin, view: ItemView, actionType: 'draw'|'props'|'copy'|'web', isDblClick = false, targetEl: ExElement | null = null) {
+    const ea = excalidrawOf(plugin.app);
     if (!ea) { new Notice("Excalidraw API not found."); return; }
     ea.setView(view);
 
@@ -69,7 +72,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
     if (!isDblClick && selected.length === 1) {
         const sel = selected[0];
         if (sel.type === "text" && actionType === 'draw') {
-            const textVal = sel.text.trim();
+            const textVal = (sel.text ?? "").trim();
             new Notice("Resolving Structure from Web...");
             let smi = textVal;
             if (!/^[A-Za-z0-9@+\-[\]()\\/=#%]+$/.test(textVal) || !/[CNOcno]/.test(textVal)) {
@@ -87,7 +90,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
     }
 
     if (isEdit && elementToUpdate) {
-        const excalidrawFile = view.excalidrawData.getFile(elementToUpdate.fileId);
+        const excalidrawFile = excalidrawFileOf(view, elementToUpdate.fileId ?? "");
         const linked: unknown = excalidrawFile?.file;
         if (linked instanceof TFile) {
             tfile = linked;
@@ -111,7 +114,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
         catch { new Notice("Failed to convert structure."); return; }
     }
 
-    if (actionType === 'copy') { navigator.clipboard.writeText(smilesData); new Notice("SMILES Copied!"); return; }
+    if (actionType === 'copy') { void navigator.clipboard.writeText(smilesData); new Notice("SMILES Copied!"); return; }
     if (actionType === 'web') { window.open(`https://pubchem.ncbi.nlm.nih.gov/#query=${encodeURIComponent(smilesData)}`, '_blank'); return; }
 
     if (actionType === 'props') {
@@ -120,10 +123,10 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
         let iupac = "";
         try {
             const res = await requestUrl(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smilesData)}/property/IUPACName/JSON`);
-            if (res.status === 200) iupac = res.json.PropertyTable.Properties[0].IUPACName;
+            if (res.status === 200) iupac = iupacOf(res.json);
         } catch { /* offline */ }
 
-        if (props && props.mw > 0) {
+        if (props && props.mw > 0 && elementToUpdate) {
             ea.clear();
             const text = `${iupac ? `**Name:** ${iupac}\n` : ''}**Formula:** ${props.formula}\n**MW:** ${props.mw.toFixed(2)}`;
             ea.addText(elementToUpdate.x + (elementToUpdate.width/2), elementToUpdate.y + elementToUpdate.height + 15, text, { textAlign: "center", fontSize: 16, strokeColor: "var(--text-muted)" });
@@ -155,7 +158,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
                 const dataURL = `data:${mimeType};base64,${utf8ToBase64(newData)}`;
                 
                 excalidrawAPI.addFiles([{
-                    id: elementToUpdate.fileId,
+                    id: elementToUpdate.fileId ?? "",
                     dataURL: dataURL,
                     mimeType: mimeType,
                     created: Date.now()
@@ -163,7 +166,8 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
 
                 // DIRECT IN-PLACE RESIZE (Prevents UI ghost duplicates)
                 const elements = ea.getViewElements();
-                const el = elements.find((e: any) => e.id === elementToUpdate.id);
+                const target = elementToUpdate;
+                const el = elements.find((e) => e.id === target.id);
                 if (el) {
                     el.width = newWidth;
                     el.height = newHeight;
@@ -181,7 +185,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
                 if (savePath && !savePath.endsWith("/")) savePath += "/";
                 if (savePath && !plugin.app.vault.getAbstractFileByPath(savePath.slice(0,-1))) await plugin.app.vault.createFolder(savePath.slice(0,-1));
                 
-                const filename = `${savePath}Structure_${(window.moment ? window.moment().format("YYYYMMDD_HHmmss") : Date.now())}.svg`;
+                const filename = `${savePath}Structure_${fileStamp()}.svg`;
                 const fileToEmbed = await plugin.app.vault.create(filename, newData);
                 
                 ea.clear();

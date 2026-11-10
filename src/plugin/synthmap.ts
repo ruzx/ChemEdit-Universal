@@ -1,7 +1,7 @@
 // Interactive synthesis map (Phoenix-ELN style): sequence overview + full structure graph,
 // pan / zoom / pinch, run lists per step, compound panel with "next step" action.
 
-import { MarkdownRenderChild, Notice, TFile, parseYaml, setIcon } from "obsidian";
+import { MarkdownRenderChild, Notice, TFile, setIcon } from "obsidian";
 import type ChemEditPlugin from "./main";
 import { parseElnYaml } from "./eln";
 import { calculateEln } from "../chem/eln";
@@ -9,6 +9,9 @@ import { parseAny, docToSmiles } from "../chem/index";
 import { computeProperties } from "../chem/props";
 import { buildSynthesis, bestYieldLabel, bestRoute, layoutMap, ExpInput, SynthGraph, SStep, SNode, MapLayout, RouteComp } from "../chem/synthesis";
 import { setSvg, setSvgChildren, appendSvg as appendSvgStr } from "../render/dom";
+import { str } from "../chem/util";
+import { yamlRecord } from "./blockopts";
+import type { ElnData } from "../chem/eln";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const canonCache = new Map<string, string | null>();
@@ -21,8 +24,8 @@ export async function loadExperiments(plugin: ChemEditPlugin): Promise<ExpInput[
   const folder = plugin.settings.elnFolder;
   const out: ExpInput[] = [];
   for (const f of plugin.app.vault.getMarkdownFiles()) {
-    const fm: any = plugin.app.metadataCache.getFileCache(f)?.frontmatter;
-    const tags = fm?.tags; const tagged = (Array.isArray(tags) ? tags : typeof tags === "string" ? tags.split(/[\s,]+/) : []).some((t: string) => String(t).replace(/^#/, "") === "experiment");
+    const fm = plugin.app.metadataCache.getFileCache(f)?.frontmatter as Record<string, unknown> | undefined;
+    const tags = fm?.tags; const tagged = (Array.isArray(tags) ? (tags as unknown[]) : typeof tags === "string" ? tags.split(/[\s,]+/) : []).some((t) => str(t).replace(/^#/, "") === "experiment");
     if (!(folder && f.path.startsWith(folder + "/")) && !tagged) continue;
     const txt = await plugin.app.vault.cachedRead(f);
     const m = /```eln\s*\n([\s\S]*?)\n```/.exec(txt);
@@ -121,12 +124,12 @@ export class SynthesisMap {
     const set = new Set<string>();
     const folder = (this.plugin.settings.labFolders?.inventory ?? "Inventory").replace(/\/$/, "");
     for (const f of this.plugin.app.vault.getMarkdownFiles()) {
-      const fm: any = this.plugin.app.metadataCache.getFileCache(f)?.frontmatter;
+      const fm = this.plugin.app.metadataCache.getFileCache(f)?.frontmatter as Record<string, unknown> | undefined;
       if (!fm?.smiles) continue;
-      const tags = Array.isArray(fm.tags) ? fm.tags : String(fm.tags ?? "").split(/[\s,]+/);
+      const tags = Array.isArray(fm.tags) ? (fm.tags as unknown[]).map(str) : str(fm.tags).split(/[\s,]+/);
       if (!f.path.startsWith(folder + "/") && !tags.includes("inventory")) continue;
-      if (/empty/i.test(fm.status ?? "")) continue;
-      const c = canonSmiles(String(fm.smiles)); if (c) set.add(c);
+      if (/empty/i.test(str(fm.status))) continue;
+      const c = canonSmiles(str(fm.smiles)); if (c) set.add(c);
     }
     return set;
   }
@@ -188,7 +191,7 @@ export class SynthesisMap {
     for (const z of ["fit", "50", "75", "100", "150"]) this.zoomSel.createEl("option", { value: z, text: z === "fit" ? "Fit" : z + "%" });
     const rb = right.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Reload" } });
     setIcon(rb, "refresh-cw");
-    rb.onclick = () => { this.svgCache.clear(); this.load(); };
+    rb.onclick = () => { this.svgCache.clear(); void this.load(); };
 
     const body = r.createDiv({ cls: "ce-rm-body" });
     this.outline = body.createDiv({ cls: "ce-rm-outline" + (this.showOutline ? "" : " is-hidden") });
@@ -248,7 +251,7 @@ export class SynthesisMap {
         const a = this.g.nodes.get(sq.start)!, b = this.g.nodes.get(sq.end)!;
         row.createSpan({ cls: "ce-rm-segtx ce-lab-ellipsis", text: `${this.label(a)} → ${this.label(b)}` });
         const ys = sq.steps.map((st) => this.best(byId.get(st.id)!));
-        const cum = ys.every((y) => y !== null) ? ys.reduce((p, y) => p * (y! / 100), 1) : null;
+        const cum = ys.every((y) => y !== null) ? ys.reduce((p, y) => p * ((y ?? 0) / 100), 1) : null;
         row.createSpan({ cls: "ce-rm-segy", text: `${sq.steps.length}×${cum !== null ? " · " + Math.round(cum * 100) + "%" : ""}` });
         row.onclick = () => this.highlight(sq.steps.map((st) => st.id), `Segment ${segLabel(sq.id)}: ${sq.steps.length} steps${cum !== null ? `, cumulative ${(cum * 100).toFixed(1)}%` : ""}`);
       }
@@ -365,7 +368,7 @@ export class SynthesisMap {
     if (!s) return;
     s.empty();
     const app = this.plugin.app;
-    const openPath = (p: string) => { const f = app.vault.getAbstractFileByPath(p); if (f instanceof TFile) app.workspace.getLeaf(false).openFile(f); };
+    const openPath = (p: string) => { const f = app.vault.getAbstractFileByPath(p); if (f instanceof TFile) void app.workspace.getLeaf(false).openFile(f); };
     if (this.hlInfo && this.hl.size) {
       const b = s.createDiv({ cls: "ce-rm-hlinfo" });
       b.createSpan({ text: this.hlInfo });
@@ -443,7 +446,7 @@ export class SynthesisMap {
     const prevRun = this.g.steps.filter((x) => x.to === from.key).flatMap((x) => x.runs).sort((a, b) => (b.yieldPct ?? -1) - (a.yieldPct ?? -1))[0];
     const prevExp = prevRun ? this.exps.find((e) => e.path === prevRun.path) : null;
     const iso = prevExp?.calc.products[0];
-    const data: any = {
+    const data: ElnData = {
       reactants: [{ name: from.name || "starting material", ...(from.smiles ? { smiles: from.smiles } : {}), eq: 1, is_limiting: true, ...(iso?.isoMmol ? { mmol: +iso.isoMmol.toFixed(3) } : {}) }],
       products: to ? [{ name: to.name || "product", ...(to.smiles ? { smiles: to.smiles } : {}) }] : [],
     };
@@ -458,10 +461,9 @@ export class SynthesisMapBlock extends MarkdownRenderChild {
   constructor(private plugin: ChemEditPlugin, el: HTMLElement, private source: string, private sourcePath: string) { super(el); }
   onload() { void this.build(); }
   private async build() {
-    let o: any = {};
-    try { o = parseYaml(this.source) ?? {}; } catch { /* */ }
-    const focus = o.focus ? this.plugin.app.metadataCache.getFirstLinkpathDest(String(o.focus).replace(/^\[\[|\]\]$/g, ""), this.sourcePath)?.path : undefined;
-    const map = new SynthesisMap(this.plugin, this.containerEl.createDiv(), { project: o.project, focus, height: o.height ?? 560, embedded: true });
+    const o = yamlRecord(this.source);
+    const focus = o.focus ? this.plugin.app.metadataCache.getFirstLinkpathDest(str(o.focus).replace(/^\[\[|\]\]$/g, ""), this.sourcePath)?.path : undefined;
+    const map = new SynthesisMap(this.plugin, this.containerEl.createDiv(), { project: str(o.project) || undefined, focus, height: Number(o.height) || 560, embedded: true });
     await map.load();
   }
 }

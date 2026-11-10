@@ -17,6 +17,7 @@ import { blockOptions, cleanFolder, writeBlockBody } from "./blockopts";
 import { PromptModal } from "./eln";
 import { nmrBlock } from "./nmrview";
 import { setSvg, setSvgChildren } from "../render/dom";
+import { str } from "../chem/util";
 
 const KEYS = ["path", "folder", "title", "height", "direction"];
 const NW = 172, GAPX = 92, ROWH = 156, GAPC = 36;
@@ -50,7 +51,7 @@ export class SynthesisPlanBlock extends MarkdownRenderChild {
   private async info(f: TFile | null): Promise<NodeInfo> {
     if (!f) return { file: null, missing: true };
     const app = this.plugin.app;
-    const fm: any = app.metadataCache.getFileCache(f)?.frontmatter ?? {};
+    const fm = (app.metadataCache.getFileCache(f)?.frontmatter ?? {}) as Record<string, unknown>;
     const txt = await app.vault.cachedRead(f);
     const m = /```eln\s*\n([\s\S]*?)\n```/.exec(txt);
     if (m) {
@@ -60,8 +61,8 @@ export class SynthesisPlanBlock extends MarkdownRenderChild {
         return { file: f, code: d.code ?? f.basename, title: d.title ?? p?.src.name, status: d.status ?? "Planned", smiles: p?.src.smiles ? String(p.src.smiles) : undefined, yieldPct: c.products[0]?.yieldPct ?? null };
       } catch { /* fall through */ }
     }
-    const sm = fm.smiles ? String(fm.smiles) : /```smiles\s*\n([^\n]+)/.exec(txt)?.[1]?.trim();
-    return { file: f, code: f.basename, title: fm.title ?? fm.name, status: fm.status, smiles: sm };
+    const sm = fm.smiles ? str(fm.smiles) : /```smiles\s*\n([^\n]+)/.exec(txt)?.[1]?.trim();
+    return { file: f, code: f.basename, title: str(fm.title) || str(fm.name) || undefined, status: str(fm.status) || undefined, smiles: sm };
   }
 
   // ------------------------------------------------------------------ rendering
@@ -262,8 +263,8 @@ export class SynthesisPlanBlock extends MarkdownRenderChild {
       stage.addEventListener("pointerdown", (ev) => {
         const target = ev.target as HTMLElement;
         const handle = target.closest(".ce-sp-handle");
-        const card = target.closest(".ce-sp-node") as HTMLElement | null;
-        const ehit = (target as Element).closest?.(".ce-sp-ehit") as SVGElement | null;
+        const card = target.closest<HTMLElement>(".ce-sp-node");
+        const ehit = target.closest<SVGElement>(".ce-sp-ehit");
         if (ehit) { ev.stopPropagation(); select("e" + ehit.dataset.edge); return; }
         if (!card) { if (st.sel) select(null); return; }
         ev.stopPropagation(); ev.preventDefault();

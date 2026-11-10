@@ -2,7 +2,7 @@
 // Overview · Experiments · Compounds · Inventory · Orders · Equipment · Protocols · Analytics · Gallery · Calculators.
 // Records are ordinary Markdown notes with YAML front matter (folder or tag), so everything stays in the vault.
 
-import { App, Component, FuzzySuggestModal, ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf, debounce, setIcon, stringifyYaml, normalizePath, MarkdownView } from "obsidian";
+import { App, Component, FuzzySuggestModal, ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf, ViewStateResult, debounce, setIcon, stringifyYaml, normalizePath, MarkdownView } from "obsidian";
 import type ChemEditPlugin from "./main";
 import { parseElnYaml } from "./eln";
 import { calculateEln, ElnData, ElnCalc, fmtMass } from "../chem/eln";
@@ -12,34 +12,39 @@ import { CALCS, CALC_BY_ID } from "../chem/calcs";
 import { stripCarbonHydrogens, type ChemDoc } from "../chem/model";
 import { SynthesisMap } from "./synthmap";
 import { calcBlock } from "./calcview";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { setSvg } from "../render/dom";
+import { str, isRecord } from "../chem/util";
+import { isoDate, longDate, inYears } from "./dates";
+import type { Format } from "../chem/index";
 
 export const LAB_VIEW = "chemedit-lab";
 export type PageId = "overview" | "experiments" | "synthesis" | "compounds" | "inventory" | "orders" | "equipment" | "protocols" | "analytics" | "gallery" | "calculators";
 
 interface MField { k: string; l: string; t?: "text" | "num" | "date" | "select" | "smiles"; opts?: string[]; col?: boolean; ph?: string }
-interface MAction { l: string; icon: string; when: (fm: any) => boolean; run: (fm: any, ctx: ActCtx) => void | Promise<void>; fm?: boolean }
+/** Front matter of a record note. */
+export type Fm = Record<string, unknown>;
+interface MAction { l: string; icon: string; when: (fm: Fm) => boolean; run: (fm: Fm, ctx: ActCtx) => void | Promise<void>; fm?: boolean }
 interface ActCtx { plugin: ChemEditPlugin; user: string; today: string; rec: Rec; view: LabCore }
 interface ModuleDef {
   id: PageId; title: string; sub: string; icon: string; folder: string; tags: string[]; newLabel: string;
   statuses?: string[]; fields: MField[]; structure?: boolean; actions?: MAction[];
-  alert?: (fm: any, today: string) => string | null; body: (fm: any) => string;
+  alert?: (fm: Fm, today: string) => string | null; body: (fm: Fm) => string;
 }
-export interface Rec { file: TFile; fm: any; title: string; status: string; smiles: string; search: string; module: PageId }
+export interface Rec { file: TFile; fm: Fm; title: string; status: string; smiles: string; search: string; module: PageId }
 
-const today = () => (window as any).moment?.().format("YYYY-MM-DD") ?? new Date().toISOString().slice(0, 10);
+const today = () => isoDate();
 const daysBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 864e5;
-const hasTag = (fm: any, tags: string[]) => { const t = fm?.tags; const arr = Array.isArray(t) ? t : typeof t === "string" ? t.split(/[\s,]+/) : []; return arr.some((x: string) => tags.includes(String(x).replace(/^#/, "").toLowerCase())); };
+const hasTag = (fm: Fm | null | undefined, tags: string[]) => { const t = fm?.tags; const arr: unknown[] = Array.isArray(t) ? t : typeof t === "string" ? t.split(/[\s,]+/) : []; return arr.some((x) => tags.includes(str(x).replace(/^#/, "").toLowerCase())); };
 
 export const MODULES: ModuleDef[] = [
   {
     id: "compounds", title: "Compounds", sub: "Reference structures, building blocks and your products", icon: "hexagon", folder: "Library", tags: ["library", "compound"], newLabel: "Add compound", structure: true,
     fields: [{ k: "name", l: "Name", col: true }, { k: "smiles", l: "Structure (SMILES)", t: "smiles" }, { k: "code", l: "Code", col: true, ph: "RS-012" }, { k: "cas", l: "CAS", col: true }, { k: "project", l: "Project", col: true }, { k: "notes", l: "Notes" }],
     actions: [
-      { l: "Copy SMILES", icon: "copy", when: (fm) => !!fm.smiles, run: async (fm) => { await navigator.clipboard.writeText(String(fm.smiles)); new Notice("SMILES copied"); } },
+      { l: "Copy SMILES", icon: "copy", when: (fm) => !!fm.smiles, run: async (fm) => { await navigator.clipboard.writeText(str(fm.smiles)); new Notice("SMILES copied"); } },
       { l: "Add to inventory", icon: "package-plus", when: () => true, run: (fm, c) => c.view.newRecord("inventory", { name: fm.name, smiles: fm.smiles, cas: fm.cas }) },
     ],
-    body: (fm) => `# ${fm.name}\n\n\`\`\`smiles\n${fm.smiles ?? ""}\n\`\`\`\n\n## Properties & data\n\n\n## Used in\n\n`,
+    body: (fm) => `# ${str(fm.name)}\n\n\`\`\`smiles\n${str(fm.smiles)}\n\`\`\`\n\n## Properties & data\n\n\n## Used in\n\n`,
   },
   {
     id: "inventory", title: "Inventory", sub: "Reagents, stock levels, locations and expiry", icon: "package", folder: "Inventory", tags: ["inventory"], newLabel: "Add item", structure: true,
@@ -49,11 +54,11 @@ export const MODULES: ModuleDef[] = [
       { l: "Check out", icon: "log-out", when: (fm) => (fm.status ?? "Available") !== "Checked out", fm: true, run: (fm, c) => { fm.status = "Checked out"; fm.checked_out_by = c.user; fm.last_updated = c.today; } },
       { l: "Return", icon: "log-in", when: (fm) => fm.status === "Checked out", fm: true, run: (fm, c) => { fm.status = "Available"; fm.checked_out_by = ""; fm.last_updated = c.today; } },
       { l: "Mark low", icon: "battery-low", when: (fm) => fm.status !== "Low", fm: true, run: (fm, c) => { fm.status = "Low"; fm.last_updated = c.today; } },
-      { l: "Find structure online (CAS/name)", icon: "search", when: (fm) => !fm.smiles, run: async (fm, c) => { const s = await c.plugin.resolveName(String(fm.cas || fm.name)); if (!s) { new Notice("Not found"); return; } await c.plugin.app.fileManager.processFrontMatter(c.rec.file, (x: any) => { x.smiles = s; const p = propsOf(s); if (p && !x.mw) x.mw = +p.mw.toFixed(3); }); new Notice("Structure added"); } },
+      { l: "Find structure online (CAS/name)", icon: "search", when: (fm) => !fm.smiles, run: async (fm, c) => { const s = await c.plugin.resolveName(str(fm.cas) || str(fm.name)); if (!s) { new Notice("Not found"); return; } await c.plugin.app.fileManager.processFrontMatter(c.rec.file, (x: Fm) => { x.smiles = s; const p = propsOf(s); if (p && !x.mw) x.mw = +p.mw.toFixed(3); }); new Notice("Structure added"); } },
       { l: "Reorder", icon: "shopping-cart", when: () => true, run: (fm, c) => c.view.newRecord("orders", { name: fm.name, supplier: fm.supplier, catalog: fm.catalog, type: "Chemical", amount: fm.amount }) },
     ],
-    alert: (fm, t) => fm.status === "Empty" ? "Empty — reorder" : fm.status === "Low" ? "Low stock" : fm.expiry && daysBetween(t, String(fm.expiry)) < 0 ? "Expired" : fm.expiry && daysBetween(t, String(fm.expiry)) < 30 ? "Expires soon" : null,
-    body: (fm) => `# ${fm.name}\n\n\`\`\`smiles\n${fm.smiles ?? ""}\n\`\`\`\n\n## Safety\n- Hazards: ${fm.hazards ?? ""}\n- SDS: \n\n## Usage log\n- ${today()}: added to inventory\n`,
+    alert: (fm, t) => fm.status === "Empty" ? "Empty — reorder" : fm.status === "Low" ? "Low stock" : fm.expiry && daysBetween(t, str(fm.expiry)) < 0 ? "Expired" : fm.expiry && daysBetween(t, str(fm.expiry)) < 30 ? "Expires soon" : null,
+    body: (fm) => `# ${str(fm.name)}\n\n\`\`\`smiles\n${str(fm.smiles)}\n\`\`\`\n\n## Safety\n- Hazards: ${str(fm.hazards)}\n- SDS: \n\n## Usage log\n- ${today()}: added to inventory\n`,
   },
   {
     id: "orders", title: "Orders", sub: "Requests, purchases and deliveries", icon: "shopping-cart", folder: "Orders", tags: ["order"], newLabel: "New request",
@@ -64,8 +69,8 @@ export const MODULES: ModuleDef[] = [
       { l: "Mark received", icon: "package-check", when: (fm) => fm.status === "Ordered", fm: true, run: (fm, c) => { fm.status = "Received"; fm.receive_date = c.today; } },
       { l: "Add to inventory", icon: "package-plus", when: (fm) => fm.status === "Received" && (fm.type ?? "Chemical") === "Chemical", run: (fm, c) => c.view.newRecord("inventory", { name: fm.name, supplier: fm.supplier, catalog: fm.catalog, amount: fm.amount }) },
     ],
-    alert: (fm, t) => fm.status === "Ordered" && fm.order_date && daysBetween(String(fm.order_date), t) > 21 ? "Ordered > 3 weeks ago" : null,
-    body: (fm) => `# ${fm.name}\n\n## Quote / links\n- \n\n## Notes\n- Why is this needed?\n`,
+    alert: (fm, t) => fm.status === "Ordered" && fm.order_date && daysBetween(str(fm.order_date), t) > 21 ? "Ordered > 3 weeks ago" : null,
+    body: (fm) => `# ${str(fm.name)}\n\n## Quote / links\n- \n\n## Notes\n- Why is this needed?\n`,
   },
   {
     id: "equipment", title: "Equipment", sub: "Instruments, bookings and maintenance", icon: "microscope", folder: "Equipment", tags: ["equipment"], newLabel: "Add instrument",
@@ -75,10 +80,10 @@ export const MODULES: ModuleDef[] = [
       { l: "Book", icon: "calendar-plus", when: (fm) => (fm.status ?? "Available") === "Available", fm: true, run: (fm, c) => { fm.status = "In use"; fm.booked_by = c.user; fm.booked_at = c.today; } },
       { l: "Release", icon: "calendar-check", when: (fm) => fm.status === "In use", fm: true, run: (fm) => { fm.status = "Available"; fm.booked_by = ""; } },
       { l: "Maintenance", icon: "wrench", when: (fm) => fm.status !== "Maintenance", fm: true, run: (fm) => { fm.status = "Maintenance"; } },
-      { l: "Back in service", icon: "check-circle", when: (fm) => fm.status === "Maintenance", fm: true, run: (fm, c) => { fm.status = "Available"; fm.last_maintenance = c.today; fm.next_maintenance = (window as any).moment?.().add(1, "year").format("YYYY-MM-DD") ?? ""; } },
+      { l: "Back in service", icon: "check-circle", when: (fm) => fm.status === "Maintenance", fm: true, run: (fm, c) => { fm.status = "Available"; fm.last_maintenance = c.today; fm.next_maintenance = inYears(1); } },
     ],
-    alert: (fm, t) => fm.status === "Maintenance" ? "In maintenance" : fm.next_maintenance && daysBetween(t, String(fm.next_maintenance)) < 0 ? "Maintenance overdue" : fm.next_maintenance && daysBetween(t, String(fm.next_maintenance)) < 14 ? "Maintenance due soon" : null,
-    body: (fm) => `# ${fm.name}\n\n## Standard operating procedure\n1. \n\n## Links\n- Manual: ${fm.manual ?? ""}\n\n## Service log\n- ${today()}: added\n`,
+    alert: (fm, t) => fm.status === "Maintenance" ? "In maintenance" : fm.next_maintenance && daysBetween(t, str(fm.next_maintenance)) < 0 ? "Maintenance overdue" : fm.next_maintenance && daysBetween(t, str(fm.next_maintenance)) < 14 ? "Maintenance due soon" : null,
+    body: (fm) => `# ${str(fm.name)}\n\n## Standard operating procedure\n1. \n\n## Links\n- Manual: ${str(fm.manual)}\n\n## Service log\n- ${today()}: added\n`,
   },
   {
     id: "protocols", title: "Protocols", sub: "SOPs, methods and safety procedures", icon: "file-text", folder: "Protocols", tags: ["protocol", "sop"], newLabel: "New protocol",
@@ -88,13 +93,13 @@ export const MODULES: ModuleDef[] = [
       { l: "Approve / reviewed", icon: "badge-check", when: (fm) => fm.status !== "Obsolete", fm: true, run: (fm, c) => { fm.status = "Approved"; fm.last_reviewed = c.today; fm.reviewed_by = c.user; } },
       { l: "Mark obsolete", icon: "archive", when: (fm) => fm.status !== "Obsolete", fm: true, run: (fm) => { fm.status = "Obsolete"; } },
     ],
-    alert: (fm, t) => fm.status === "Approved" && fm.last_reviewed && daysBetween(String(fm.last_reviewed), t) > 365 ? "Review overdue (> 1 year)" : fm.status === "Draft" ? "Draft — needs approval" : null,
-    body: (fm) => `# ${fm.name}\n\n## Scope\n\n## Safety precautions\n- PPE: lab coat, goggles, gloves\n\n## Materials\n- \n\n## Procedure\n1. \n\n## Waste disposal\n- \n\n## Revision history\n| Version | Date | Author | Change |\n|---|---|---|---|\n| ${fm.version ?? "1.0"} | ${today()} | ${fm.author ?? ""} | Created |\n`,
+    alert: (fm, t) => fm.status === "Approved" && fm.last_reviewed && daysBetween(str(fm.last_reviewed), t) > 365 ? "Review overdue (> 1 year)" : fm.status === "Draft" ? "Draft — needs approval" : null,
+    body: (fm) => `# ${str(fm.name)}\n\n## Scope\n\n## Safety precautions\n- PPE: lab coat, goggles, gloves\n\n## Materials\n- \n\n## Procedure\n1. \n\n## Waste disposal\n- \n\n## Revision history\n| Version | Date | Author | Change |\n|---|---|---|---|\n| ${str(fm.version) || "1.0"} | ${today()} | ${str(fm.author)} | Created |\n`,
   },
   {
     id: "analytics", title: "Analytics", sub: "Characterisation status of your compounds — publication readiness", icon: "bar-chart-3", folder: "Characterization", tags: ["characterization", "compound"], newLabel: "Add compound", structure: true,
     fields: [{ k: "name", l: "Compound", col: true }, { k: "smiles", l: "Structure (SMILES)", t: "smiles" }, { k: "code", l: "Code" }],
-    body: (fm) => `# ${fm.name}\n\n\`\`\`smiles\n${fm.smiles ?? ""}\n\`\`\`\n\n## Spectra\n- ¹H NMR: \n- ¹³C NMR: \n- HRMS: \n`,
+    body: (fm) => `# ${str(fm.name)}\n\n\`\`\`smiles\n${str(fm.smiles)}\n\`\`\`\n\n## Spectra\n- ¹H NMR: \n- ¹³C NMR: \n- HRMS: \n`,
   },
 ];
 const MOD = new Map(MODULES.map((m) => [m.id, m]));
@@ -126,7 +131,7 @@ export class LabView extends ItemView {
   getDisplayText() { return "ChemEdit Lab"; }
   getIcon() { return "flask-conical"; }
   getState() { return { page: this.core.page, focus: this.core.focus }; }
-  async setState(s: any, r: any) { if (s?.page) this.core.page = s.page; this.core.focus = s?.focus; this.core.refreshAll(); return (ItemView.prototype as any).setState?.call(this, s, r); }
+  async setState(s: unknown, r: ViewStateResult) { if (isRecord(s)) { if (typeof s.page === "string") this.core.page = s.page as PageId; this.core.focus = typeof s.focus === "string" ? s.focus : undefined; } this.core.refreshAll(); return super.setState(s, r); }
   async onOpen() { this.addChild(this.core); this.core.mount(this.contentEl); }
   async onClose() { this.removeChild(this.core); }
   go(p: PageId, focus?: string) { this.core.go(p, focus); }
@@ -156,10 +161,10 @@ export class LabCore extends Component {
   folderOf(id: PageId | "gallery"): string {
     if (this.embed?.folder !== undefined && this.embed.page === id) return this.embed.folder.replace(/\/$/, "");
     if (id === "experiments") return this.plugin.settings.elnFolder;
-    return ((this.plugin.settings.labFolders as any)?.[id] ?? MOD.get(id as PageId)?.folder ?? "").replace(/\/$/, "");
+    return (this.plugin.settings.labFolders?.[id] ?? MOD.get(id)?.folder ?? "").replace(/\/$/, "");
   }
   private get fixedFolder() { return this.embed?.folder !== undefined; }
-  refreshAll() { if (this.main) { this.drawNav(); this.renderPage(); } }
+  refreshAll() { if (this.main) { this.drawNav(); void this.renderPage(); } }
 
   mount(c: HTMLElement) {
     c.empty();
@@ -169,16 +174,16 @@ export class LabCore extends Component {
     this.main = c.createDiv({ cls: "ce-lab-main" });
     this.drawNav();
     const live = (p: PageId) => p !== "gallery" && p !== "synthesis" && p !== "calculators";
-    const refresh = debounce(() => { this.expCache = null; if (live(this.page)) this.renderPage(true); }, 1500, true);
+    const refresh = debounce(() => { this.expCache = null; if (live(this.page)) void this.renderPage(true); }, 1500, true);
     this.registerEvent(this.app.metadataCache.on("changed", () => refresh()));
     this.registerEvent(this.app.vault.on("delete", () => refresh()));
     this.registerEvent(this.app.vault.on("rename", () => refresh()));
-    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: any) => { if (leaf?.view instanceof MarkdownView) this.lastMd = leaf.view; }));
-    this.renderPage();
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null) => { if (leaf?.view instanceof MarkdownView) this.lastMd = leaf.view; }));
+    void this.renderPage();
   }
   onunload() { this.observer?.disconnect(); }
 
-  go(p: PageId, focus?: string) { this.focus = focus; this.page = p; this.q = ""; this.filter = ""; this.subQuery = null; this.mode = MOD.get(p)?.structure ? "cards" : "table"; this.drawNav(); this.renderPage(); }
+  go(p: PageId, focus?: string) { this.focus = focus; this.page = p; this.q = ""; this.filter = ""; this.subQuery = null; this.mode = MOD.get(p)?.structure ? "cards" : "table"; this.drawNav(); void this.renderPage(); }
 
   private drawNav() {
     const n = this.nav;
@@ -198,7 +203,7 @@ export class LabCore extends Component {
     const s = foot.createDiv({ cls: "ce-lab-navitem", attr: { role: "button" } });
     setIcon(s.createSpan({ cls: "ce-lab-navicon" }), "settings");
     s.createSpan({ cls: "ce-lab-navlabel", text: "Settings" });
-    s.onclick = () => { const st = (this.app as any).setting; st?.open?.(); st?.openTabById?.(this.plugin.manifest.id); };
+    s.onclick = () => openSettings(this.app, this.plugin.manifest.id);
   }
 
   // ---------------------------------------------------------------- data
@@ -209,12 +214,12 @@ export class LabCore extends Component {
     const tagsToo = !(this.fixedFolder && this.embed!.page === id);
     const out: Rec[] = [];
     for (const f of this.app.vault.getMarkdownFiles()) {
-      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter ?? null;
+      const fm = (this.app.metadataCache.getFileCache(f)?.frontmatter ?? null) as Fm | null;
       const inFolder = folder && f.path.startsWith(folder + "/");
       if (!inFolder && !(tagsToo && fm && hasTag(fm, m.tags))) continue;
-      const d: any = fm ?? {};
-      const title = String(d.name ?? d.title ?? f.basename);
-      out.push({ file: f, fm: d, title, status: String(d.status ?? m.statuses?.[0] ?? ""), smiles: String(d.smiles ?? ""), module: id, search: [title, f.basename, ...m.fields.map((x) => d[x.k] ?? ""), d.status ?? ""].join(" ").toLowerCase() });
+      const d: Fm = fm ?? {};
+      const title = str(d.name) || str(d.title) || f.basename;
+      out.push({ file: f, fm: d, title, status: str(d.status) || m.statuses?.[0] || "", smiles: str(d.smiles), module: id, search: [title, f.basename, ...m.fields.map((x) => str(d[x.k])), str(d.status)].join(" ").toLowerCase() });
     }
     return out.sort((a, b) => a.title.localeCompare(b.title));
   }
@@ -225,7 +230,7 @@ export class LabCore extends Component {
     const tagsToo = !(this.fixedFolder && this.embed!.page === "experiments");
     const out: ExpRow[] = [];
     for (const f of this.app.vault.getMarkdownFiles()) {
-      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter as Fm | undefined;
       if (!(folder && f.path.startsWith(folder + "/")) && !(tagsToo && fm && hasTag(fm, ["experiment"]))) continue;
       const txt = await this.app.vault.cachedRead(f);
       const m = /```eln\s*\n([\s\S]*?)\n```/.exec(txt);
@@ -284,7 +289,7 @@ export class LabCore extends Component {
     if (opts.modes) {
       const mb = right.createEl("button", { cls: "clickable-icon", attr: { "aria-label": this.mode === "cards" ? "Table view" : "Card view" } });
       setIcon(mb, this.mode === "cards" ? "table-2" : "layout-grid");
-      mb.onclick = () => { this.mode = this.mode === "cards" ? "table" : "cards"; this.renderPage(); };
+      mb.onclick = () => { this.mode = this.mode === "cards" ? "table" : "cards"; void this.renderPage(); };
     }
   }
 
@@ -317,7 +322,7 @@ export class LabCore extends Component {
     while (this.queue.length && performance.now() - t0 < 10) {
       const el = this.queue.shift()!;
       if (!el.isConnected) continue;
-      if (el.dataset.file && !el.dataset.struct) { this.loadFileStruct(el); continue; }
+      if (el.dataset.file && !el.dataset.struct) { void this.loadFileStruct(el); continue; }
       this.drawStruct(el);
     }
     if (this.queue.length) window.requestAnimationFrame(() => this.pump()); else this.pumping = false;
@@ -327,7 +332,7 @@ export class LabCore extends Component {
     let svg = SVG_CACHE.get(key);
     if (svg === undefined) {
       try {
-        const doc = parseAny(el.dataset.struct!, (el.dataset.fmt as any) ?? "auto");
+        const doc = parseAny(el.dataset.struct!, (el.dataset.fmt as Format | undefined) ?? "auto");
         if (!doc.atoms.length) throw new Error("no atoms");
         svg = this.plugin.svgFor(stripCarbonHydrogens(doc), { maxHeight: +(el.dataset.h ?? 90), padding: 3 });
       } catch { svg = ""; }
@@ -355,14 +360,14 @@ export class LabCore extends Component {
     if (!this.pumping) { this.pumping = true; window.requestAnimationFrame(() => this.pump()); }
   }
 
-  openNote(f: TFile) { this.app.workspace.getLeaf(false).openFile(f); }
+  openNote(f: TFile) { void this.app.workspace.getLeaf(false).openFile(f); }
 
   // ---------------------------------------------------------------- overview
 
   private async pageOverview() {
     const t = today();
     const hour = new Date().getHours();
-    this.head(`${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}${this.plugin.settings.userName ? ", " + this.plugin.settings.userName : ""}`, (window as any).moment?.().format("dddd, D MMMM YYYY") ?? t, { l: "New experiment", run: () => this.plugin.newExperiment() });
+    this.head(`${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}${this.plugin.settings.userName ? ", " + this.plugin.settings.userName : ""}`, longDate(), { l: "New experiment", run: () => this.plugin.newExperiment() });
     const exps = await this.experiments();
     const recs = Object.fromEntries(MODULES.map((m) => [m.id, this.records(m.id)])) as Record<string, Rec[]>;
     const month = t.slice(0, 7);
@@ -422,7 +427,7 @@ export class LabCore extends Component {
     const qr = qa.createDiv({ cls: "ce-lab-quick" });
     const q = (icon: string, l: string, run: () => void) => { const b = qr.createEl("button", { cls: "ce-lab-quickbtn" }); setIcon(b.createSpan(), icon); b.createSpan({ text: l }); b.onclick = run; };
     q("flask-conical", "New experiment", () => this.plugin.newExperiment());
-    q("pen-tool", "Experiment from drawing", () => (this.app as any).commands?.executeCommandById?.(`${this.plugin.manifest.id}:new-experiment-from-drawing`));
+    q("pen-tool", "Experiment from drawing", () => runCommand(this.app, `${this.plugin.manifest.id}:new-experiment-from-drawing`));
     q("hexagon", "Add compound", () => this.newRecord("compounds"));
     q("package-plus", "Add inventory item", () => this.newRecord("inventory"));
     q("shopping-cart", "New order", () => this.newRecord("orders"));
@@ -441,12 +446,13 @@ export class LabCore extends Component {
     const projects = [...new Set(rows.map((r) => r.d.project).filter(Boolean))] as string[];
     let project = "";
     let lim = this.embed?.limit ?? Infinity;
+    let listToken = 0;
     const list = () => {
       body.empty();
       const fAll = rows.filter((r) => (!this.filter || (r.d.status ?? "Planned") === this.filter) && (!project || r.d.project === project) && (!this.q || this.q.split(/\s+/).every((w) => r.text.includes(w))));
       const f = fAll.slice(0, lim);
-      const tok = ((body as any)._tok = ((body as any)._tok ?? 0) + 1);
-      if (fAll.length > lim) window.setTimeout(() => { if ((body as any)._tok !== tok) return; const more = body.createEl("button", { cls: "ce-lab-more", text: `Show more (${fAll.length - lim} left)` }); more.onclick = () => { lim += Math.max(6, this.embed?.limit ?? 12); list(); }; }, 0);
+      const tok = ++listToken;
+      if (fAll.length > lim) window.setTimeout(() => { if (listToken !== tok) return; const more = body.createEl("button", { cls: "ce-lab-more", text: `Show more (${fAll.length - lim} left)` }); more.onclick = () => { lim += Math.max(6, this.embed?.limit ?? 12); list(); }; }, 0);
       if (!f.length) { body.createDiv({ cls: "ce-lab-empty", text: rows.length ? "Nothing matches the filter." : `No experiments in “${this.folderOf("experiments")}” yet. Create one with “+ New experiment”.` }); return; }
       const yld = (r: ExpRow) => { const p = r.calc.products[0]; return p?.yieldPct !== null && p?.yieldPct !== undefined && isFinite(p.yieldPct) ? `${p.yieldPct.toFixed(0)}%` : "–"; };
       const scheme = (r: ExpRow) => { const rs = (r.d.reactants ?? []).filter((c) => c.smiles && (c.role ?? "reactant") === "reactant").map((c) => c.smiles).join("."); const ps = (r.d.products ?? []).filter((c) => c.smiles).map((c) => c.smiles).join("."); return rs || ps ? `${rs}>>${ps}` : ""; };
@@ -495,7 +501,7 @@ export class LabCore extends Component {
 
   private async setElnStatus(f: TFile, s: string) {
     await this.app.vault.process(f, (txt) => txt.replace(/(```eln\s*\n[\s\S]*?)(^status:.*$)/m, `$1status: ${s}`).replace(/^(```eln\s*\n)(?![\s\S]*?^status:)/m, `$1status: ${s}\n`));
-    await this.app.fileManager.processFrontMatter(f, (fm: any) => { if ("status" in fm) fm.status = s; });
+    await this.app.fileManager.processFrontMatter(f, (fm: Fm) => { if ("status" in fm) fm.status = s; });
     new Notice(`Status → ${s}`);
   }
 
@@ -507,7 +513,7 @@ export class LabCore extends Component {
       const fb = el.createEl("button", { cls: "clickable-icon", attr: { "aria-label": `Folder: ${this.folderOf(m.id)}` } });
       setIcon(fb, "folder-open");
       if (this.fixedFolder) fb.remove();
-      fb.onclick = () => new FolderPrompt(this.app, m.title, this.folderOf(m.id), async (v) => { this.plugin.settings.labFolders = { ...(this.plugin.settings.labFolders ?? {}), [m.id]: v }; await this.plugin.saveSettings(); this.renderPage(); }).open();
+      fb.onclick = () => new FolderPrompt(this.app, m.title, this.folderOf(m.id), async (v) => { this.plugin.settings.labFolders = { ...(this.plugin.settings.labFolders ?? {}), [m.id]: v }; await this.plugin.saveSettings(); void this.renderPage(); }).open();
       if (m.id === "inventory" || m.id === "compounds") {
         const ib = el.createEl("button", { cls: "ce-lab-importbtn", attr: { "aria-label": "Import a CSV export (e.g. KLARA / ChemInventory): name, CAS, SMILES, MW, amount, location…" } });
         setIcon(ib.createSpan(), "file-up"); ib.createSpan({ text: "Import CSV" });
@@ -517,7 +523,7 @@ export class LabCore extends Component {
             let total = 0, skipped = 0;
             for (const file of Array.from(inp.files ?? [])) { const r = await importCsv(this.plugin, m, this.folderOf(m.id), await file.text()); total += r.created; skipped += r.skipped; }
             new Notice(`Imported ${total} item(s)${skipped ? `, ${skipped} already present` : ""}`);
-            window.setTimeout(() => this.renderPage(), 800);
+            window.setTimeout(() => void this.renderPage(), 800);
           };
           inp.click();
         };
@@ -526,7 +532,7 @@ export class LabCore extends Component {
       setIcon(ex, "sheet");
       ex.onclick = async () => {
         const cols = m.fields.filter((f) => f.t !== "smiles" || m.structure);
-        const lines = [["file", "status", ...cols.map((c) => c.l)].join("\t"), ...recs.map((r) => [r.file.basename, r.status, ...cols.map((c) => String(r.fm[c.k] ?? ""))].join("\t"))];
+        const lines = [["file", "status", ...cols.map((c) => c.l)].join("\t"), ...recs.map((r) => [r.file.basename, r.status, ...cols.map((c) => str(r.fm[c.k]))].join("\t"))];
         await navigator.clipboard.writeText(lines.join("\n")); new Notice(`${recs.length} rows copied`);
       };
     };
@@ -545,14 +551,14 @@ export class LabCore extends Component {
         return;
       }
       const t0 = today();
-      const statusMenu = (r: Rec, e: MouseEvent) => { if (!m.statuses) return; const mm = new Menu(); for (const s of m.statuses) mm.addItem((i) => i.setTitle(s).onClick(() => this.app.fileManager.processFrontMatter(r.file, (fm: any) => { fm.status = s; fm.last_updated = t0; }))); mm.showAtMouseEvent(e); };
+      const statusMenu = (r: Rec, e: MouseEvent) => { if (!m.statuses) return; const mm = new Menu(); for (const s of m.statuses) mm.addItem((i) => i.setTitle(s).onClick(() => this.app.fileManager.processFrontMatter(r.file, (fm: Fm) => { fm.status = s; fm.last_updated = t0; }))); mm.showAtMouseEvent(e); };
       const actions = (el: HTMLElement, r: Rec) => {
         const acts = (m.actions ?? []).filter((a) => a.when(r.fm));
         const wrap = el.createDiv({ cls: "ce-lab-acts" });
         for (const a of acts.slice(0, 2)) {
           const b = wrap.createEl("button", { cls: "ce-lab-act", attr: { "aria-label": a.l } });
           setIcon(b.createSpan(), a.icon); b.createSpan({ cls: "ce-lab-actl", text: a.l });
-          b.onclick = (e) => { e.stopPropagation(); this.runAction(a, r); };
+          b.onclick = (e) => { e.stopPropagation(); void this.runAction(a, r); };
         }
         const more = wrap.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "More" } });
         setIcon(more, "more-horizontal");
@@ -562,8 +568,8 @@ export class LabCore extends Component {
           for (const a of acts) mm.addItem((i) => i.setTitle(a.l).setIcon(a.icon).onClick(() => this.runAction(a, r)));
           mm.addSeparator();
           mm.addItem((i) => i.setTitle("Open note").setIcon("file").onClick(() => this.openNote(r.file)));
-          mm.addItem((i) => i.setTitle("Open in new tab").setIcon("file-plus").onClick(() => this.app.workspace.getLeaf("tab").openFile(r.file)));
-          if (m.structure) mm.addItem((i) => i.setTitle("Edit structure…").setIcon("hexagon").onClick(() => this.plugin.openEditor(r.smiles || null, (res) => this.app.fileManager.processFrontMatter(r.file, (fm: any) => { fm.smiles = res.smiles; }), { title: r.title })));
+          mm.addItem((i) => i.setTitle("Open in new tab").setIcon("file-plus").onClick(() => void this.app.workspace.getLeaf("tab").openFile(r.file)));
+          if (m.structure) mm.addItem((i) => i.setTitle("Edit structure…").setIcon("hexagon").onClick(() => this.plugin.openEditor(r.smiles || null, (res) => this.app.fileManager.processFrontMatter(r.file, (fm: Fm) => { fm.smiles = res.smiles; }), { title: r.title })));
           mm.showAtMouseEvent(e);
         };
       };
@@ -578,7 +584,7 @@ export class LabCore extends Component {
           if (m.statuses) this.badge(h, r.status, (e) => statusMenu(r, e));
           this.structSlot(c, r.smiles, 100);
           const p = r.smiles ? propsOf(r.smiles) : null;
-          c.createDiv({ cls: "ce-lab-muted", text: [p?.formula, p?.mw ? p.mw.toFixed(2) + " g/mol" : "", r.fm.cas ? "CAS " + r.fm.cas : "", r.fm.location].filter(Boolean).join(" · ") });
+          c.createDiv({ cls: "ce-lab-muted", text: [p?.formula, p?.mw ? p.mw.toFixed(2) + " g/mol" : "", r.fm.cas ? "CAS " + str(r.fm.cas) : "", r.fm.location].filter(Boolean).join(" · ") });
           const a = alertOf(r);
           if (a) c.createDiv({ cls: "ce-lab-flag", text: "⚠ " + a });
           actions(c, r);
@@ -598,12 +604,12 @@ export class LabCore extends Component {
           tr.onclick = () => this.openNote(r.file);
           if (m.structure) this.structSlot(tr.createEl("td", { cls: "ce-lab-tdstruct" }), r.smiles, 54);
           cols.forEach((c, i) => {
-            const td = tr.createEl("td", { text: String(r.fm[c.k] ?? (i === 0 ? r.title : "")) });
+            const td = tr.createEl("td", { text: str(r.fm[c.k]) || (i === 0 ? r.title : "") });
             if (i === 0) { td.addClass("ce-lab-strong"); const a = alertOf(r); if (a) td.createDiv({ cls: "ce-lab-flag", text: "⚠ " + a }); }
-            if (c.t === "date" && r.fm[c.k] && daysBetween(t0, String(r.fm[c.k])) < 0 && c.k !== "last_reviewed") td.addClass("is-overdue");
+            if (c.t === "date" && r.fm[c.k] && daysBetween(t0, str(r.fm[c.k])) < 0 && c.k !== "last_reviewed") td.addClass("is-overdue");
           });
           if (m.structure) { const p = r.smiles ? propsOf(r.smiles) : null; tr.createEl("td", { cls: "ce-lab-muted", text: p ? `${p.formula} · ${p.mw.toFixed(2)}` : "" }); }
-          if (m.statuses) { const td = tr.createEl("td"); this.badge(td, r.status, (e) => statusMenu(r, e)); const who = r.fm.checked_out_by || r.fm.booked_by; if (who) td.createDiv({ cls: "ce-lab-muted", text: who }); }
+          if (m.statuses) { const td = tr.createEl("td"); this.badge(td, r.status, (e) => statusMenu(r, e)); const who = r.fm.checked_out_by || r.fm.booked_by; if (who) td.createDiv({ cls: "ce-lab-muted", text: str(who) }); }
           actions(tr.createEl("td", { cls: "ce-lab-tdacts" }), r);
         }
       }
@@ -612,8 +618,8 @@ export class LabCore extends Component {
       const sb = el.createEl("button", { cls: "ce-lab-chip" + (this.subQuery ? " is-on" : ""), text: this.subQuery ? "Substructure ✕" : "Substructure…" });
       setIcon(sb.createSpan({ cls: "ce-lab-chipicon" }), "search");
       sb.onclick = () => {
-        if (this.subQuery) { this.subQuery = null; this.renderPage(); return; }
-        this.plugin.openEditor(null, (res) => { this.subQuery = res.doc; this.renderPage(); }, { title: "Draw substructure query", saveLabel: "Search" });
+        if (this.subQuery) { this.subQuery = null; void this.renderPage(); return; }
+        this.plugin.openEditor(null, (res) => { this.subQuery = res.doc; void this.renderPage(); }, { title: "Draw substructure query", saveLabel: "Search" });
       };
     } : undefined });
     const body = this.main.createDiv({ cls: "ce-lab-body" });
@@ -622,27 +628,27 @@ export class LabCore extends Component {
 
   private async runAction(a: MAction, r: Rec) {
     const ctx: ActCtx = { plugin: this.plugin, user: this.plugin.settings.userName || "me", today: today(), rec: r, view: this };
-    if (a.fm) { await this.app.fileManager.processFrontMatter(r.file, (fm: any) => a.run(fm, ctx)); new Notice(`${r.title}: ${a.l}`); }
+    if (a.fm) { await this.app.fileManager.processFrontMatter(r.file, (fm: Fm) => { void a.run(fm, ctx); }); new Notice(`${r.title}: ${a.l}`); }
     else await a.run(r.fm, ctx);
   }
 
-  newRecord(id: PageId, preset: any = {}) {
+  newRecord(id: PageId, preset: Fm = {}) {
     const m = MOD.get(id)!;
     new RecordModal(this.plugin, m, preset, async (fm) => {
       const folder = normalizePath(this.folderOf(id) || m.folder);
       if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
-      const data: any = { tags: [m.tags[0]], ...fm };
+      const data: Fm = { tags: [m.tags[0]], ...fm };
       if (m.statuses && !data.status) data.status = m.statuses[0];
       if (id === "orders" && !data.requester) data.requester = this.plugin.settings.userName || "";
       if (id === "protocols" && !data.author) data.author = this.plugin.settings.userName || "";
-      if (data.smiles) { const p = propsOf(String(data.smiles)); if (p) { data.formula = p.formula; data.mw = +p.mw.toFixed(3); } }
+      if (data.smiles) { const p = propsOf(str(data.smiles)); if (p) { data.formula = p.formula; data.mw = +p.mw.toFixed(3); } }
       data.created = today();
       const safe = String(fm.name || m.newLabel).replace(/[\\/:*?"<>|#^[\]]/g, "-").trim();
       let path = normalizePath(`${folder}/${safe}.md`), k = 2;
       while (this.app.vault.getAbstractFileByPath(path)) path = normalizePath(`${folder}/${safe} ${k++}.md`);
       const file = await this.app.vault.create(path, `---\n${stringifyYaml(data)}---\n${m.body(data)}`);
       new Notice(`Created ${file.basename}`);
-      this.app.workspace.getLeaf("tab").openFile(file);
+      void this.app.workspace.getLeaf("tab").openFile(file);
     }).open();
   }
 
@@ -653,11 +659,11 @@ export class LabCore extends Component {
     const metrics = (this.plugin.settings.charMetrics || "hnmr, cnmr, hrms, ir, mp").split(",").map((s) => s.trim()).filter(Boolean);
     const label = (k: string) => ({ hnmr: "¹H NMR", cnmr: "¹³C NMR", fnmr: "¹⁹F NMR", pnmr: "³¹P NMR", hrms: "HRMS", ir: "IR", mp: "m.p.", ea: "EA", xray: "X-ray", hplc: "HPLC", rf: "Rf" } as Record<string, string>)[k.toLowerCase()] ?? k.toUpperCase();
     const recs = this.records("analytics");
-    const done = (v: any) => !!v && v !== "false" && v !== false && v !== "✗";
+    const done = (v: unknown) => !!v && v !== "false" && v !== false && v !== "✗";
     this.head(m.title, m.sub, { l: m.newLabel, run: () => this.newRecord("analytics", Object.fromEntries(metrics.map((k) => [k, false]))) }, (el) => {
       const b = el.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Edit tracked analyses" } });
       setIcon(b, "sliders-horizontal");
-      b.onclick = () => new FolderPrompt(this.app, "Tracked analyses (YAML keys, comma-separated)", this.plugin.settings.charMetrics || "hnmr, cnmr, hrms, ir, mp", async (v) => { this.plugin.settings.charMetrics = v; await this.plugin.saveSettings(); this.renderPage(); }, "Analyses").open();
+      b.onclick = () => new FolderPrompt(this.app, "Tracked analyses (YAML keys, comma-separated)", this.plugin.settings.charMetrics || "hnmr, cnmr, hrms, ir, mp", async (v) => { this.plugin.settings.charMetrics = v; await this.plugin.saveSettings(); void this.renderPage(); }, "Analyses").open();
     });
     const scores = recs.map((r) => metrics.length ? Math.round((100 * metrics.filter((k) => done(r.fm[k])).length) / metrics.length) : 0);
     const kpi = this.main.createDiv({ cls: "ce-lab-kpis" });
@@ -683,9 +689,9 @@ export class LabCore extends Component {
           b.onclick = (e) => {
             const mm = new Menu();
             if (isLink) mm.addItem((i) => i.setTitle("Open " + v.replace(/[[\]]/g, "")).setIcon("link").onClick(() => { const tf = this.app.metadataCache.getFirstLinkpathDest(v.replace(/^\[\[|\]\]$/g, "").split("|")[0], r.file.path); if (tf) this.openNote(tf); }));
-            mm.addItem((i) => i.setTitle("Mark done").setIcon("check").onClick(() => this.app.fileManager.processFrontMatter(r.file, (fm: any) => { fm[k] = true; })));
-            mm.addItem((i) => i.setTitle("Link spectrum / note…").setIcon("paperclip").onClick(() => new FolderPrompt(this.app, `${label(k)} — link or value`, typeof v === "string" ? v : "[[]]", (nv) => this.app.fileManager.processFrontMatter(r.file, (fm: any) => { fm[k] = nv; }), "Value").open()));
-            mm.addItem((i) => i.setTitle("Mark missing").setIcon("x").onClick(() => this.app.fileManager.processFrontMatter(r.file, (fm: any) => { fm[k] = false; })));
+            mm.addItem((i) => i.setTitle("Mark done").setIcon("check").onClick(() => this.app.fileManager.processFrontMatter(r.file, (fm: Fm) => { fm[k] = true; })));
+            mm.addItem((i) => i.setTitle("Link spectrum / note…").setIcon("paperclip").onClick(() => new FolderPrompt(this.app, `${label(k)} — link or value`, typeof v === "string" ? v : "[[]]", (nv) => this.app.fileManager.processFrontMatter(r.file, (fm: Fm) => { fm[k] = nv; }), "Value").open()));
+            mm.addItem((i) => i.setTitle("Mark missing").setIcon("x").onClick(() => this.app.fileManager.processFrontMatter(r.file, (fm: Fm) => { fm[k] = false; })));
             mm.showAtMouseEvent(e);
           };
         }
@@ -719,7 +725,7 @@ export class LabCore extends Component {
       if (hit === undefined) {
         const c = this.app.metadataCache.getFileCache(f);
         hit = null;
-        if (c?.sections?.some((x: any) => x.type === "code")) {
+        if (c?.sections?.some((x) => x.type === "code")) {
           const txt = await this.app.vault.cachedRead(f);
           const m = /```(smiles|mol|chemedit)\s*\n([\s\S]*?)\n```/.exec(txt);
           if (m && m[2].trim()) hit = { kind: m[1], data: m[2].trim() };
@@ -758,10 +764,10 @@ export class LabCore extends Component {
       const fb = el.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Limit to folder" } });
       setIcon(fb, "folder-open");
       if (this.fixedFolder) fb.remove();
-      fb.onclick = () => new FolderPrompt(this.app, "Gallery (empty = whole vault)", folder, async (v) => { this.plugin.settings.labFolders = { ...(this.plugin.settings.labFolders ?? {}), gallery: v }; await this.plugin.saveSettings(); this.renderPage(); }).open();
+      fb.onclick = () => new FolderPrompt(this.app, "Gallery (empty = whole vault)", folder, async (v) => { this.plugin.settings.labFolders = { ...(this.plugin.settings.labFolders ?? {}), gallery: v }; await this.plugin.saveSettings(); void this.renderPage(); }).open();
       const rb = el.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Rescan" } });
       setIcon(rb, "refresh-cw");
-      rb.onclick = () => { SCAN_CACHE.clear(); SVG_CACHE.clear(); this.renderPage(); };
+      rb.onclick = () => { SCAN_CACHE.clear(); SVG_CACHE.clear(); void this.renderPage(); };
     } });
     const body = this.main.createDiv({ cls: "ce-lab-body" });
     list();
@@ -787,10 +793,10 @@ export class LabCore extends Component {
 
   private async insertCalc(id: string) {
     const block = "\n" + calcBlock(id);
-    const md = this.lastMd && this.app.workspace.getLeavesOfType("markdown").some((l: any) => l.view === this.lastMd) ? this.lastMd : null;
+    const md = this.lastMd && this.app.workspace.getLeavesOfType("markdown").some((l) => l.view === this.lastMd) ? this.lastMd : null;
     if (md?.editor && md.file) {
       md.editor.replaceSelection(block);
-      this.app.workspace.revealLeaf(md.leaf);
+      void this.app.workspace.revealLeaf(md.leaf);
       new Notice(`Inserted into ${md.file.basename}`);
       return;
     }
@@ -800,7 +806,7 @@ export class LabCore extends Component {
     let path = normalizePath(name), k = 2;
     while (this.app.vault.getAbstractFileByPath(path)) path = normalizePath(name.replace(/\.md$/, ` ${k++}.md`));
     const f = await this.app.vault.create(path, `---\ntags: [calculation]\n---\n${block}`);
-    this.app.workspace.getLeaf("tab").openFile(f);
+    void this.app.workspace.getLeaf("tab").openFile(f);
   }
 }
 
@@ -815,19 +821,19 @@ function propsOf(smi: string) {
 // ---------------------------------------------------------------- modals
 
 class FolderPrompt extends Modal {
-  constructor(app: any, private label: string, private value: string, private onOk: (v: string) => void, private field = "Folder") { super(app); }
+  constructor(app: App, private label: string, private value: string, private onOk: (v: string) => void | Promise<void>, private field = "Folder") { super(app); }
   onOpen() {
     this.titleEl.setText(this.label);
     let v = this.value;
-    new Setting(this.contentEl).setName(this.field).addText((t) => { t.setValue(v).onChange((x) => (v = x)); window.setTimeout(() => t.inputEl.focus(), 30); t.inputEl.onkeydown = (e) => { if (e.key === "Enter") { this.onOk(v.trim().replace(/\/$/, "")); this.close(); } }; });
-    new Setting(this.contentEl).addButton((b) => b.setButtonText("Save").setCta().onClick(() => { this.onOk(v.trim().replace(/\/$/, "")); this.close(); }));
+    new Setting(this.contentEl).setName(this.field).addText((t) => { t.setValue(v).onChange((x) => (v = x)); window.setTimeout(() => t.inputEl.focus(), 30); t.inputEl.onkeydown = (e) => { if (e.key === "Enter") { void this.onOk(v.trim().replace(/\/$/, "")); this.close(); } }; });
+    new Setting(this.contentEl).addButton((b) => b.setButtonText("Save").setCta().onClick(() => { void this.onOk(v.trim().replace(/\/$/, "")); this.close(); }));
   }
   onClose() { this.contentEl.empty(); }
 }
 
 class RecordModal extends Modal {
-  private fm: any;
-  constructor(private plugin: ChemEditPlugin, private m: ModuleDef, preset: any, private onOk: (fm: any) => void) { super(plugin.app); this.fm = { ...preset }; }
+  private fm: Fm;
+  constructor(private plugin: ChemEditPlugin, private m: ModuleDef, preset: Fm, private onOk: (fm: Fm) => void | Promise<void>) { super(plugin.app); this.fm = { ...preset }; }
   onOpen() {
     this.modalEl.addClass("ce-lab-modal");
     this.titleEl.setText(this.m.newLabel);
@@ -839,12 +845,12 @@ class RecordModal extends Modal {
     if (this.m.structure) {
       const sw = c.createDiv({ cls: "ce-lab-modalstruct" });
       const pv = sw.createDiv({ cls: "ce-lab-struct" });
-      if (this.fm.smiles) { try { setSvg(pv, this.plugin.svgFor(parseAny(String(this.fm.smiles)), { maxHeight: 140, padding: 4 })); } catch { pv.setText("Invalid structure"); } }
+      if (this.fm.smiles) { try { setSvg(pv, this.plugin.svgFor(parseAny(str(this.fm.smiles)), { maxHeight: 140, padding: 4 })); } catch { pv.setText("Invalid structure"); } }
       else { pv.addClass("is-empty"); pv.setText("No structure yet"); }
       const bs = sw.createDiv({ cls: "ce-lab-modalbtns" });
-      bs.createEl("button", { text: "Draw…" }).onclick = () => this.plugin.openEditor(this.fm.smiles || null, (r) => { this.fm.smiles = r.smiles; this.draw(); }, { title: this.fm.name || "Structure" });
+      bs.createEl("button", { text: "Draw…" }).onclick = () => this.plugin.openEditor(str(this.fm.smiles) || null, (r) => { this.fm.smiles = r.smiles; this.draw(); }, { title: str(this.fm.name) || "Structure" });
       bs.createEl("button", { text: "From name" }).onclick = async () => {
-        const nm = this.fm.name?.trim();
+        const nm = str(this.fm.name).trim();
         if (!nm) { new Notice("Enter a name first"); return; }
         new Notice(`Looking up ${nm}…`);
         const s = await this.plugin.resolveName(nm);
@@ -853,17 +859,17 @@ class RecordModal extends Modal {
     }
     for (const f of this.m.fields) {
       if (f.t === "smiles") {
-        new Setting(c).setName(f.l).addText((t) => t.setPlaceholder("CCO").setValue(this.fm.smiles ?? "").onChange((v) => (this.fm.smiles = v.trim())).inputEl.addEventListener("change", () => this.draw()));
+        new Setting(c).setName(f.l).addText((t) => t.setPlaceholder("CCO").setValue(str(this.fm.smiles)).onChange((v) => (this.fm.smiles = v.trim())).inputEl.addEventListener("change", () => this.draw()));
         continue;
       }
       const s = new Setting(c).setName(f.l);
-      if (f.t === "select") s.addDropdown((d) => { for (const o of f.opts ?? []) d.addOption(o, o); d.setValue(this.fm[f.k] ?? f.opts?.[0] ?? ""); this.fm[f.k] = d.getValue(); d.onChange((v) => (this.fm[f.k] = v)); });
-      else s.addText((t) => { t.setPlaceholder(f.ph ?? (f.t === "date" ? "YYYY-MM-DD" : "")).setValue(this.fm[f.k] !== undefined ? String(this.fm[f.k]) : "").onChange((v) => { if (v.trim()) this.fm[f.k] = f.t === "num" ? +v : v.trim(); else delete this.fm[f.k]; }); if (f.t === "date") t.inputEl.type = "date"; });
+      if (f.t === "select") s.addDropdown((d) => { for (const o of f.opts ?? []) d.addOption(o, o); d.setValue(str(this.fm[f.k]) || (f.opts?.[0] ?? "")); this.fm[f.k] = d.getValue(); d.onChange((v) => (this.fm[f.k] = v)); });
+      else s.addText((t) => { t.setPlaceholder(f.ph ?? (f.t === "date" ? "YYYY-MM-DD" : "")).setValue(str(this.fm[f.k])).onChange((v) => { if (v.trim()) this.fm[f.k] = f.t === "num" ? +v : v.trim(); else delete this.fm[f.k]; }); if (f.t === "date") t.inputEl.type = "date"; });
     }
-    if (this.m.statuses) new Setting(c).setName("Status").addDropdown((d) => { for (const o of this.m.statuses!) d.addOption(o, o); d.setValue(this.fm.status ?? this.m.statuses![0]); d.onChange((v) => (this.fm.status = v)); });
+    if (this.m.statuses) new Setting(c).setName("Status").addDropdown((d) => { for (const o of this.m.statuses!) d.addOption(o, o); d.setValue(str(this.fm.status) || this.m.statuses![0]); d.onChange((v) => (this.fm.status = v)); });
     new Setting(c).addButton((b) => b.setButtonText("Cancel").onClick(() => this.close())).addButton((b) => b.setButtonText("Create").setCta().onClick(() => {
-      if (!String(this.fm.name ?? "").trim()) { new Notice("Name is required"); return; }
-      this.onOk(this.fm); this.close();
+      if (!str(this.fm.name).trim()) { new Notice("Name is required"); return; }
+      void this.onOk(this.fm); this.close();
     }));
   }
   onClose() { this.contentEl.empty(); }
@@ -872,26 +878,28 @@ class RecordModal extends Modal {
 export { docToSmiles, fmtMass };
 
 /** Pick a compound from the Compounds library or Inventory (used by the ELN “+ Reagent” menu). */
-export class CompoundPicker extends FuzzySuggestModal<{ name: string; smiles: string; src: string; extra: string }> {
-  constructor(private plugin: ChemEditPlugin, private onPick: (c: { name: string; smiles: string; cas?: string; lot?: string }) => void) {
+export interface PickedCompound { name: string; smiles: string; src: string; extra: string; cas?: string; lot?: string; mw?: number }
+export class CompoundPicker extends FuzzySuggestModal<PickedCompound> {
+  constructor(private plugin: ChemEditPlugin, private onPick: (c: PickedCompound) => void) {
     super(plugin.app);
     this.setPlaceholder("Search compounds library & inventory…");
   }
   getItems() {
-    const out: Array<{ name: string; smiles: string; src: string; extra: string; cas?: string; lot?: string }> = [];
+    const out: PickedCompound[] = [];
     for (const id of ["compounds", "inventory"] as const) {
       const m = MOD.get(id)!;
       const folder = (this.plugin.settings.labFolders?.[id] ?? m.folder).replace(/\/$/, "");
       for (const f of this.app.vault.getMarkdownFiles()) {
-        const fm: any = this.app.metadataCache.getFileCache(f)?.frontmatter;
+        const fm = this.app.metadataCache.getFileCache(f)?.frontmatter as Fm | undefined;
         if (!fm || !(f.path.startsWith(folder + "/") || hasTag(fm, m.tags))) continue;
-        out.push({ name: String(fm.name ?? f.basename), smiles: String(fm.smiles ?? ""), src: id === "compounds" ? "Library" : "Inventory", extra: [fm.cas && "CAS " + fm.cas, fm.location, fm.amount].filter(Boolean).join(" · "), cas: fm.cas, lot: fm.lot, mw: fm.mw } as any);
+        const mw = Number(fm.mw);
+        out.push({ name: str(fm.name) || f.basename, smiles: str(fm.smiles), src: id === "compounds" ? "Library" : "Inventory", extra: [fm.cas ? "CAS " + str(fm.cas) : "", str(fm.location), str(fm.amount)].filter(Boolean).join(" · "), cas: str(fm.cas) || undefined, lot: str(fm.lot) || undefined, mw: isFinite(mw) && mw > 0 ? mw : undefined });
       }
     }
     return out;
   }
-  getItemText(i: { name: string; src: string; extra: string }) { return `${i.name} — ${i.src}${i.extra ? " · " + i.extra : ""}`; }
-  onChooseItem(i: any) { this.onPick({ name: i.name, smiles: i.smiles, cas: i.cas, lot: i.lot, mw: i.mw } as any); }
+  getItemText(i: PickedCompound) { return `${i.name} — ${i.src}${i.extra ? " · " + i.extra : ""}`; }
+  onChooseItem(i: PickedCompound) { this.onPick(i); }
 }
 
 // ---------------------------------------------------------------- CSV import (KLARA / ChemInventory / generic)
@@ -925,7 +933,7 @@ async function importCsv(plugin: ChemEditPlugin, m: ModuleDef, folder: string, t
   const dir = normalizePath(folder);
   if (!app.vault.getAbstractFileByPath(dir)) await app.vault.createFolder(dir).catch(() => {});
   const existing = new Set<string>();
-  for (const f of app.vault.getMarkdownFiles()) { const fm: any = app.metadataCache.getFileCache(f)?.frontmatter; if (fm?.barcode) existing.add(String(fm.barcode)); }
+  for (const f of app.vault.getMarkdownFiles()) { const fm = app.metadataCache.getFileCache(f)?.frontmatter as Fm | undefined; if (fm?.barcode) existing.add(str(fm.barcode)); }
   const get = (r: string[], i: number) => (i >= 0 ? (r[i] ?? "").trim() : "");
   let created = 0, skipped = 0;
   for (const r of rows.slice(1)) {
@@ -933,13 +941,13 @@ async function importCsv(plugin: ChemEditPlugin, m: ModuleDef, folder: string, t
     if (!name) continue;
     const barcode = get(r, C.barcode);
     if (barcode && existing.has(barcode)) { skipped++; continue; }
-    const fm: any = { tags: [m.tags[0]], name };
+    const fm: Fm = { tags: [m.tags[0]], name };
     const cas = get(r, C.cas); if (cas) fm.cas = cas;
     let smi = get(r, C.smiles).replace(/\s*\|.*\|\s*$/, ""); // drop ChemAxon extensions
     if (smi) { try { parseAny(smi, "smiles"); fm.smiles = smi; } catch { fm.smiles_raw = smi; } }
     const mw = parseFloat(get(r, C.mw).replace(",", ".")); if (isFinite(mw) && mw > 0) fm.mw = +mw.toFixed(3);
-    else if (fm.smiles) { const p = propsOf(fm.smiles); if (p) fm.mw = +p.mw.toFixed(3); }
-    if (fm.smiles) { const p = propsOf(fm.smiles); if (p) fm.formula = p.formula.replace(/[₀-₉]/g, (c) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(c))); }
+    else if (fm.smiles) { const p = propsOf(str(fm.smiles)); if (p) fm.mw = +p.mw.toFixed(3); }
+    if (fm.smiles) { const p = propsOf(str(fm.smiles)); if (p) fm.formula = p.formula.replace(/[₀-₉]/g, (c) => String("₀₁₂₃₄₅₆₇₈₉".indexOf(c))); }
     const q = get(r, C.qty).replace(",", "."), u = get(r, C.unit); if (q) fm.amount = `${q} ${u}`.trim();
     const loc = [get(r, C.room), get(r, C.storage)].filter(Boolean).join(" / "); if (loc) fm.location = loc;
     if (C.building >= 0 && get(r, C.building)) fm.building = get(r, C.building);
@@ -957,4 +965,14 @@ async function importCsv(plugin: ChemEditPlugin, m: ModuleDef, folder: string, t
     created++;
   }
   return { created, skipped };
+}
+
+/** Open this plugin's settings tab (private API, guarded). */
+function openSettings(app: App, id: string) {
+  const st = (app as unknown as { setting?: { open?: () => void; openTabById?: (id: string) => void } }).setting;
+  st?.open?.(); st?.openTabById?.(id);
+}
+/** Run a command by id (private API, guarded). */
+function runCommand(app: App, id: string) {
+  (app as unknown as { commands?: { executeCommandById?: (id: string) => boolean } }).commands?.executeCommandById?.(id);
 }

@@ -10,7 +10,7 @@ import { renderSVG } from "../render/svg";
 import { svgToPngBlob } from "../render/png";
 import { predictNmr, acsText, spectrumSvg, SOLVENTS, solventOf, carbonMHz, NmrPrediction, Nucleus, PredSignal, multipletRange, spectrumRange as spectrumSvgRange } from "../chem/nmr/spectrum";
 import { blockOptions, writeBlockOptions, insertAfterBlock } from "./blockopts";
-import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
+import { setSvg, serializeEl } from "../render/dom";
 
 const KEYS = ["smiles", "mol", "nucleus", "mhz", "solvent", "range", "name", "title"];
 const MHZ = [300, 400, 500, 600];

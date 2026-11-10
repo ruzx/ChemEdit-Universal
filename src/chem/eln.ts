@@ -3,6 +3,7 @@
 import { parseAny } from "./index";
 import { analyse } from "./analysis";
 import { computeProperties } from "./props";
+import { str } from "./util";
 
 export type Role = "reactant" | "reagent" | "catalyst" | "solvent";
 
@@ -12,7 +13,7 @@ export interface ElnCompound {
   is_limiting?: boolean; cas?: string; lot?: string;
   // products
   mass_isolated?: number; mmol_isolated?: number; yield?: number | string;
-  [k: string]: any;
+  [k: string]: unknown;
 }
 
 export interface ElnData {
@@ -20,7 +21,7 @@ export interface ElnData {
   solvent?: string; temperature?: string; duration?: string; atmosphere?: string; conditions?: string;
   scale_mmol?: number;
   reactants?: ElnCompound[]; products?: ElnCompound[];
-  [k: string]: any;
+  [k: string]: unknown;
 }
 
 export interface CalcRow {
@@ -36,9 +37,9 @@ export interface ElnCalc {
   concentration: number | null; atomEconomy: number | null; warnings: string[];
 }
 
-const num = (v: any): number | null => {
+const num = (v: unknown): number | null => {
   if (v === undefined || v === null || v === "") return null;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+  const n = typeof v === "number" ? v : parseFloat(str(v).replace(",", "."));
   return isFinite(n) ? n : null;
 };
 
@@ -54,7 +55,7 @@ export function calculateEln(d: ElnData): ElnCalc {
   const rows: CalcRow[] = reactants.map((r, index) => {
     const p = props(r.smiles);
     const mw = num(r.mw) ?? p?.mw ?? null;
-    return { src: r, index, role: (r.role ?? "reactant") as Role, mw, formula: p?.formula ?? "", eq: null, mmol: null, mass: null, volume: null, limiting: false };
+    return { src: r, index, role: r.role ?? "reactant", mw, formula: p?.formula ?? "", eq: null, mmol: null, mass: null, volume: null, limiting: false };
   });
   const stoich = rows.filter((r) => r.role !== "solvent");
   let lim = stoich.find((r) => r.src.is_limiting) ?? stoich.find((r) => num(r.src.eq) === 1) ?? stoich[0];
