@@ -3,11 +3,12 @@
 
 import { App, FuzzySuggestModal, MarkdownPostProcessorContext, Menu, Notice, TFile, parseYaml, setIcon, stringifyYaml, Editor } from "obsidian";
 import type ChemEditPlugin from "./main";
-import { CALCS, CALC_BY_ID, CalcDef, Field, Plot, matrixCalc, MATRIX_EXAMPLE, n } from "../chem/calcs";
+import { CALCS, CALC_BY_ID, CalcDef, Field, Plot, matrixCalc, n } from "../chem/calcs";
 import { HteView } from "./hteview";
 import { XEC_EXAMPLE, XEC_CATSYS } from "../chem/hte";
 import { computeProperties } from "../chem/props";
 import { parseAny } from "../chem/index";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 
 export const LEGACY_DEFAULT: Record<string, string> = { "organic-helper": "nmr_yield", "analytical-eln": "calibration", "bio-eln": "pcr", "polymer-eln": "polymerization", "matrix-eln": "matrix" };
 const mwCache = new Map<string, number | null>();
@@ -165,7 +166,7 @@ export class CalcRenderer {
       }
       for (const c of outCells) c.el.setText(fmtNum(out.rows?.[c.t]?.[c.i]?.[c.k], 3));
       plotEl.empty();
-      if (out.plot) plotEl.innerHTML = plotSvg(out.plot);
+      if (out.plot) setSvg(plotEl, plotSvg(out.plot));
       notesEl.empty();
       for (const nt of out.notes ?? []) notesEl.createDiv({ cls: "ce-calc-note", text: "ⓘ " + nt });
     };
@@ -287,7 +288,6 @@ export class CalcPicker extends FuzzySuggestModal<{ id: string; title: string; g
   getItems() { return [...CALCS.map((c) => ({ id: c.id, title: c.title, group: c.group, desc: c.desc })), { id: "hte", title: "HTE planner (plate, recipe, Bayesian next batch)", group: "HTE", desc: "Visual vial/plate screen with stock solutions, prep step, HPLC yields and Bayesian suggestions." }]; }
   getItemText(i: { title: string; group: string; desc: string }) { return `${i.group} · ${i.title} — ${i.desc}`; }
   onChooseItem(i: { id: string }) {
-    const ex = i.id === "hte" || i.id === "matrix" ? XEC_EXAMPLE : CALC_BY_ID.get(i.id)!.example;
     this.onPick(calcBlock(i.id));
   }
 }

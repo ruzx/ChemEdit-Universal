@@ -10,6 +10,7 @@ import { TlcModal } from "./tlc";
 import { CompoundPicker } from "./lab";
 import { CalcPicker } from "./calcview";
 import { nmrBlock } from "./nmrview";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 const STATUSES = ["Planned", "Running", "Work-up", "Purification", "Completed", "Failed", "On hold"];
 
 /** Quote unquoted SMILES values (they may contain '#', ':' or '[') before YAML parsing — same trick as ChemEdit 1.x. */
@@ -106,14 +107,13 @@ export class PromptModal extends Modal {
   onOpen() {
     this.titleEl.setText(this.title);
     const inp = this.contentEl.createEl("input", { type: "text", placeholder: this.placeholder, value: this.initial });
-    inp.style.width = "100%";
-    const row = this.contentEl.createDiv({ cls: "chemedit-modal-buttons" });
-    row.style.marginTop = "12px"; row.style.justifyContent = "flex-end";
+    inp.addClass("ce-full-width");
+    const row = this.contentEl.createDiv({ cls: "chemedit-modal-buttons ce-modal-row-end" });
     const ok = row.createEl("button", { text: "OK", cls: "mod-cta" });
     const go = () => { const v = inp.value.trim(); this.close(); if (v) this.onOk(v); };
     ok.onclick = go;
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-    setTimeout(() => { inp.focus(); inp.select(); }, 20);
+    window.setTimeout(() => { inp.focus(); inp.select(); }, 20);
   }
   onClose() { this.contentEl.empty(); }
 }
@@ -160,7 +160,7 @@ export class ElnRenderer {
     // scheme
     const sch = schemeDoc(d);
     const schemeEl = box.createDiv({ cls: "ce-eln-scheme" });
-    if (sch) schemeEl.innerHTML = this.plugin.svgFor(sch, { maxHeight: 220 });
+    if (sch) setSvg(schemeEl, this.plugin.svgFor(sch, { maxHeight: 220 }));
     else schemeEl.createDiv({ cls: "ce-eln-empty", text: "No structures yet — double-click to draw the reaction" });
     schemeEl.title = "Double-click to edit the reaction scheme";
     const editScheme = () => this.plugin.openEditor(sch ?? null, (r) => save((x) => applySchemeToData(x, r.doc)), { title: "Edit reaction scheme", saveLabel: "Update experiment" });
@@ -305,7 +305,7 @@ export class ElnRenderer {
   private thumbCell(tr: HTMLElement, smiles: string | undefined, onEdit: () => void) {
     const td = tr.createEl("td", { cls: "ce-eln-thumb" });
     if (smiles) {
-      try { td.innerHTML = this.plugin.svgFor(parseAny(String(smiles)), { maxHeight: 44, padding: 2 }); } catch { td.setText("?"); }
+      try { setSvg(td, this.plugin.svgFor(parseAny(String(smiles)), { maxHeight: 44, padding: 2 })); } catch { td.setText("?"); }
     } else td.setText("+");
     td.title = "Double-click to draw / edit";
     td.addEventListener("dblclick", (e) => { e.preventDefault(); onEdit(); });
@@ -377,7 +377,7 @@ export class ElnRenderer {
     const start = (e: Event) => {
       e.preventDefault(); e.stopPropagation();
       if (cell.querySelector("input")) return;
-      const old = cell.innerHTML;
+      const old = Array.from(cell.childNodes);
       cell.empty();
       const inp = cell.createEl("input", { type: "text", value: raw });
       inp.inputMode = type === "number" ? "decimal" : "text";
@@ -387,8 +387,8 @@ export class ElnRenderer {
       const finish = (ok: boolean) => {
         if (done) return; done = true;
         const v = inp.value.trim().replace(",", ".");
-        if (!ok || v === raw) { cell.innerHTML = old; return; }
-        if (type === "number" && v !== "" && !isFinite(+v)) { cell.innerHTML = old; new Notice("Please enter a number"); return; }
+        if (!ok || v === raw) { cell.empty(); cell.append(...old); return; }
+        if (type === "number" && v !== "" && !isFinite(+v)) { cell.empty(); cell.append(...old); new Notice("Please enter a number"); return; }
         commit(v);
       };
       inp.addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Enter") finish(true); if (ev.key === "Escape") finish(false); });
@@ -428,7 +428,7 @@ export class ElnRenderer {
       a.onclick = (e) => { e.preventDefault(); this.plugin.app.workspace.getLeaf(false).openFile(f); };
       const p = calc.products[0];
       const th = tr.createEl("td", { cls: "ce-eln-thumb" });
-      if (p?.src.smiles) { try { th.innerHTML = this.plugin.svgFor(parseAny(String(p.src.smiles)), { maxHeight: 50, padding: 2 }); } catch { /* */ } }
+      if (p?.src.smiles) { try { setSvg(th, this.plugin.svgFor(parseAny(String(p.src.smiles)), { maxHeight: 50, padding: 2 })); } catch { /* */ } }
       tr.createEl("td", { text: d.project ?? "" });
       tr.createEl("td", { text: p?.yieldPct !== null && p?.yieldPct !== undefined && isFinite(p.yieldPct) ? p.yieldPct.toFixed(0) + "%" : "–" });
       tr.createEl("td").createSpan({ cls: `ce-eln-status ce-st-${(d.status ?? "Planned").toLowerCase().replace(/\s/g, "")}`, text: d.status ?? "Planned" });

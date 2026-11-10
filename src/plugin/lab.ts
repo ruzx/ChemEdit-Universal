@@ -8,10 +8,11 @@ import { parseElnYaml } from "./eln";
 import { calculateEln, ElnData, ElnCalc, fmtMass } from "../chem/eln";
 import { parseAny, docToSmiles, formatForExtension } from "../chem/index";
 import { computeProperties, substructureMatch } from "../chem/props";
-import { CALCS, CALC_BY_ID, MATRIX_EXAMPLE } from "../chem/calcs";
+import { CALCS, CALC_BY_ID } from "../chem/calcs";
 import { stripCarbonHydrogens, type ChemDoc } from "../chem/model";
 import { SynthesisMap } from "./synthmap";
 import { calcBlock } from "./calcview";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 
 export const LAB_VIEW = "chemedit-lab";
 export type PageId = "overview" | "experiments" | "synthesis" | "compounds" | "inventory" | "orders" | "equipment" | "protocols" | "analytics" | "gallery" | "calculators";
@@ -335,7 +336,7 @@ export class LabCore extends Component {
     }
     delete el.dataset.struct;
     el.removeClass("is-loading");
-    if (svg) el.innerHTML = svg;
+    if (svg) setSvg(el, svg);
     else { el.addClass("is-empty", "is-error"); el.setText("no preview (open file)"); }
   }
   private async loadFileStruct(el: HTMLElement) {
@@ -511,7 +512,7 @@ export class LabCore extends Component {
         const ib = el.createEl("button", { cls: "ce-lab-importbtn", attr: { "aria-label": "Import a CSV export (e.g. KLARA / ChemInventory): name, CAS, SMILES, MW, amount, location…" } });
         setIcon(ib.createSpan(), "file-up"); ib.createSpan({ text: "Import CSV" });
         ib.onclick = () => {
-          const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".csv,.tsv,.txt"; inp.multiple = true;
+          const inp = createEl("input"); inp.type = "file"; inp.accept = ".csv,.tsv,.txt"; inp.multiple = true;
           inp.onchange = async () => {
             let total = 0, skipped = 0;
             for (const file of Array.from(inp.files ?? [])) { const r = await importCsv(this.plugin, m, this.folderOf(m.id), await file.text()); total += r.created; skipped += r.skipped; }
@@ -838,7 +839,7 @@ class RecordModal extends Modal {
     if (this.m.structure) {
       const sw = c.createDiv({ cls: "ce-lab-modalstruct" });
       const pv = sw.createDiv({ cls: "ce-lab-struct" });
-      if (this.fm.smiles) { try { pv.innerHTML = this.plugin.svgFor(parseAny(String(this.fm.smiles)), { maxHeight: 140, padding: 4 }); } catch { pv.setText("Invalid structure"); } }
+      if (this.fm.smiles) { try { setSvg(pv, this.plugin.svgFor(parseAny(String(this.fm.smiles)), { maxHeight: 140, padding: 4 })); } catch { pv.setText("Invalid structure"); } }
       else { pv.addClass("is-empty"); pv.setText("No structure yet"); }
       const bs = sw.createDiv({ cls: "ce-lab-modalbtns" });
       bs.createEl("button", { text: "Draw…" }).onclick = () => this.plugin.openEditor(this.fm.smiles || null, (r) => { this.fm.smiles = r.smiles; this.draw(); }, { title: this.fm.name || "Structure" });

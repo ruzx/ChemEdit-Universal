@@ -2,11 +2,12 @@
 // Designed for small, fast screens (4–24 vials) with stock-solution maths, a prep step
 // (e.g. in-situ Finkelstein), plate map, pipetting sheet, HPLC assay yields and Bayesian next-batch suggestions.
 
-import { Menu, Notice, setIcon } from "obsidian";
+import { Menu, Notice, setIcon, App, Modal } from "obsidian";
 import type ChemEditPlugin from "./main";
-import { HteData, HFactor, HFixed, HLevel, HRun, HComp, PLATES, wellIds, lvl, combos, balancedSubset, ofat, recipe, prepInfo, runYield, mainEffects, suggestBO, mlCsv, Recipe, planChecks, timepoints, resOf, HTE_PRESETS, isNumericFactor } from "../chem/hte";
+import { HteData, HFactor, HLevel, HRun, HComp, PLATES, wellIds, lvl, combos, balancedSubset, ofat, recipe, prepInfo, runYield, mainEffects, suggestBO, mlCsv, planChecks, timepoints, resOf, HTE_PRESETS, isNumericFactor } from "../chem/hte";
 import { mwOf, fmtNum } from "./calcview";
 import { parseAny } from "../chem/index";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 
 const UI = new Map<string, { tab: string; well: string | null; colorBy: string; hl?: string }>();
 const COLORS = ["#4f7cff", "#e8743b", "#19a979", "#d64ea8", "#9a6cff", "#d9a400", "#13a4b4", "#bf3a3a", "#6a8f2a", "#945ecf", "#555"];
@@ -73,7 +74,7 @@ export class HteView {
     setIcon(pb.createSpan(), "layout-template"); pb.createSpan({ text: "Templates" });
     pb.onclick = (e) => {
       const m = new Menu();
-      for (const p of HTE_PRESETS) m.addItem((i) => i.setTitle(`${p.title} — ${p.desc}`).onClick(() => { const keep = this.d.runs!.length && !confirmReplace(); if (keep) return; for (const k of Object.keys(this.d)) delete (this.d as any)[k]; Object.assign(this.d, JSON.parse(JSON.stringify(p.data))); this.ui.tab = "plan"; this.save(); }));
+      for (const p of HTE_PRESETS) m.addItem((i) => i.setTitle(`${p.title} — ${p.desc}`).onClick(() => { const apply = () => { for (const k of Object.keys(this.d)) delete (this.d as any)[k]; Object.assign(this.d, JSON.parse(JSON.stringify(p.data))); this.ui.tab = "plan"; this.save(); }; if (this.d.runs!.length && this.plugin) new ConfirmModal(this.plugin.app, "Replace this screen (including its results) with the template?", apply).open(); else apply(); }));
       m.showAtMouseEvent(e);
     };
     this.scheme(box);
@@ -97,7 +98,7 @@ export class HteView {
     const k = smiles + "|" + h;
     if (!this.svgCache.has(k)) { try { this.svgCache.set(k, this.plugin.svgFor(parseAny(smiles), { maxHeight: h, padding: 2 })); } catch { this.svgCache.set(k, ""); } }
     const svg = this.svgCache.get(k)!;
-    if (svg) el.innerHTML = svg;
+    if (svg) setSvg(el, svg);
     return !!svg;
   }
   private levelSmiles(L: HLevel): string | undefined {
@@ -319,7 +320,6 @@ export class HteView {
     const d = this.d;
     const ids = wellIds(String(d.plate));
     const runs = d.runs!;
-    const used = new Set(runs.map((r) => r.well));
     const free = () => ids.filter((w) => !runs.some((r) => r.well === w));
     const batchNo = Math.max(0, ...runs.map((r) => r.batch ?? 1)) + 1;
     const add = (list: Array<Record<string, string>>) => {
@@ -566,6 +566,13 @@ export class HteView {
   }
 }
 
-function confirmReplace(): boolean {
-  try { return window.confirm("Replace this screen (including its results) with the template?"); } catch { return true; }
+class ConfirmModal extends Modal {
+  constructor(app: App, private msg: string, private onYes: () => void) { super(app); }
+  onOpen() {
+    this.contentEl.createEl("p", { text: this.msg });
+    const row = this.contentEl.createDiv({ cls: "modal-button-container" });
+    row.createEl("button", { text: "Cancel" }).onclick = () => this.close();
+    row.createEl("button", { text: "Replace", cls: "mod-warning" }).onclick = () => { this.close(); this.onYes(); };
+  }
+  onClose() { this.contentEl.empty(); }
 }

@@ -18,7 +18,7 @@ function imgFromCanvas(c: HTMLCanvasElement): Img {
   return { width: c.width, height: c.height, data: d.data };
 }
 function canvasFromImg(img: Img): HTMLCanvasElement {
-  const c = document.createElement("canvas");
+  const c = createEl("canvas");
   c.width = img.width; c.height = img.height;
   c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
   return c;
@@ -83,7 +83,7 @@ export class TlcModal extends Modal {
       try {
         const im = await loadImage(f);
         const k = Math.min(1, 1600 / Math.max(im.naturalWidth, im.naturalHeight));
-        const c = document.createElement("canvas");
+        const c = createEl("canvas");
         c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
         c.getContext("2d")!.drawImage(im, 0, 0, c.width, c.height);
         this.src = c;
@@ -316,7 +316,7 @@ export class TlcModal extends Modal {
   private async insert() {
     const pl = this.plateCanvas!;
     const scale = Math.min(1, 700 / pl.height);
-    const c = document.createElement("canvas");
+    const c = createEl("canvas");
     c.width = Math.round(pl.width * scale); c.height = Math.round(pl.height * scale);
     this.paintPlate(c.getContext("2d")!, c.width, c.height, false);
     const blob: Blob = await new Promise((ok, err) => c.toBlob((b) => (b ? ok(b) : err(new Error("encode"))), "image/png"));

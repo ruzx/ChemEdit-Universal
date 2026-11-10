@@ -7,7 +7,7 @@ import { extractDataFromSvg } from '../svgmeta';
 export function initExcalidrawBridge(plugin: ChemEditPlugin) {
     plugin.registerEvent(plugin.app.workspace.on('layout-change', () => injectExcalidrawUI(plugin)));
     plugin.registerEvent(plugin.app.workspace.on('active-leaf-change', () => injectExcalidrawUI(plugin)));
-    setTimeout(() => injectExcalidrawUI(plugin), 1000);
+    window.setTimeout(() => injectExcalidrawUI(plugin), 1000);
 }
 
 function injectExcalidrawUI(plugin: ChemEditPlugin) {
@@ -20,51 +20,13 @@ function injectExcalidrawUI(plugin: ChemEditPlugin) {
 
     let toolsContainer = container.querySelector('.chemedit-excalidraw-tools') as HTMLElement;
     if (!toolsContainer) {
-        toolsContainer = document.createElement('div');
-        toolsContainer.className = 'chemedit-excalidraw-tools';
-        
-        Object.assign(toolsContainer.style, {
-            position: 'absolute',
-            top: '80px',
-            left: '16px',
-            zIndex: '100',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            padding: '6px',
-            backgroundColor: 'var(--background-primary)',
-            borderRadius: '8px',
-            border: '1px solid var(--background-modifier-border)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        });
+        toolsContainer = createDiv({ cls: 'chemedit-excalidraw-tools ce-bridge-tools' });
         excalidrawUI.appendChild(toolsContainer);
 
         const createBtn = (iconName: string, title: string, isMain: boolean, onClick: () => void) => {
-            const btn = document.createElement('button');
+            const btn = createEl('button', { cls: isMain ? 'ce-bridge-btn is-main' : 'ce-bridge-btn' });
             btn.title = title;
             setIcon(btn, iconName);
-            
-            const size = isMain ? '38px' : '32px';
-            const iconColor = isMain ? 'var(--text-normal)' : 'var(--text-muted)';
-            const bgColor = isMain ? 'var(--background-modifier-active-hover)' : 'transparent';
-
-            Object.assign(btn.style, {
-                width: size, height: size, padding: '6px', borderRadius: '6px',
-                backgroundColor: bgColor, color: iconColor, border: '1px solid transparent',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'all 0.2s'
-            });
-
-            btn.onmouseover = () => { 
-                btn.style.color = "var(--text-normal)"; 
-                btn.style.backgroundColor = "var(--background-modifier-hover)"; 
-                btn.style.borderColor = "var(--background-modifier-border)";
-            };
-            btn.onmouseout = () => { 
-                btn.style.color = iconColor; 
-                btn.style.backgroundColor = bgColor; 
-                btn.style.borderColor = "transparent";
-            };
             btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(); };
             toolsContainer.appendChild(btn);
         };
@@ -83,7 +45,7 @@ function injectExcalidrawUI(plugin: ChemEditPlugin) {
             if (!ea) return;
             ea.setView(view);
 
-            setTimeout(() => {
+            window.setTimeout(() => {
                 const selected = ea.getViewSelectedElements();
                 if (selected.length === 1 && selected[0].type === "image") {
                     handleAction(plugin, view, 'draw', true, selected[0]);
@@ -110,11 +72,11 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
             const textVal = sel.text.trim();
             new Notice("Resolving Structure from Web...");
             let smi = textVal;
-            if (!/^[A-Za-z0-9@+\-\[\]\(\)\\\/=#%]+$/.test(textVal) || !/[CNOcno]/.test(textVal)) {
+            if (!/^[A-Za-z0-9@+\-[\]()\\/=#%]+$/.test(textVal) || !/[CNOcno]/.test(textVal)) {
                 try {
                     const opsin = await requestUrl(`https://opsin.ch.cam.ac.uk/opsin/${encodeURIComponent(textVal)}.smi`);
                     if (opsin.status === 200) smi = opsin.text.trim();
-                } catch(e) {}
+                } catch { /* offline */ }
             }
             initialData = smi;
         } 
@@ -126,8 +88,9 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
 
     if (isEdit && elementToUpdate) {
         const excalidrawFile = view.excalidrawData.getFile(elementToUpdate.fileId);
-        if (excalidrawFile && excalidrawFile.file) {
-            tfile = excalidrawFile.file as TFile;
+        const linked: unknown = excalidrawFile?.file;
+        if (linked instanceof TFile) {
+            tfile = linked;
             if (['svg', 'mol', 'cdxml'].includes(tfile.extension.toLowerCase())) {
                 initialData = await plugin.app.vault.read(tfile);
                 if (tfile.extension.toLowerCase() === 'svg') {
@@ -145,7 +108,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
     if (actionType === 'copy' || actionType === 'web' || actionType === 'props') {
         new Notice("Processing structure...", 1000);
         try { smilesData = await plugin.api.ketcher.convertFormat(initialData, 'smiles'); } 
-        catch (e) { new Notice("Failed to convert structure."); return; }
+        catch { new Notice("Failed to convert structure."); return; }
     }
 
     if (actionType === 'copy') { navigator.clipboard.writeText(smilesData); new Notice("SMILES Copied!"); return; }
@@ -158,7 +121,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
         try {
             const res = await requestUrl(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smilesData)}/property/IUPACName/JSON`);
             if (res.status === 200) iupac = res.json.PropertyTable.Properties[0].IUPACName;
-        } catch(e) {}
+        } catch { /* offline */ }
 
         if (props && props.mw > 0) {
             ea.clear();
@@ -189,7 +152,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
 
                 // MEMORY CACHE BUST (Forces Excalidraw to load the new SVG content)
                 const mimeType = "image/svg+xml";
-                const dataURL = `data:${mimeType};base64,${btoa(unescape(encodeURIComponent(newData)))}`;
+                const dataURL = `data:${mimeType};base64,${utf8ToBase64(newData)}`;
                 
                 excalidrawAPI.addFiles([{
                     id: elementToUpdate.fileId,
@@ -232,7 +195,7 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
                     await ea.addElementsToView(true, false);
                 }
 
-                setTimeout(() => {
+                window.setTimeout(() => {
                     const elements = ea.getViewElements();
                     const el = elements[elements.length - 1]; 
                     if (el && el.type === "image") {
@@ -244,3 +207,4 @@ async function handleAction(plugin: ChemEditPlugin, view: any, actionType: 'draw
         });
     }
 }
+function utf8ToBase64(t: string): string { const b = new TextEncoder().encode(t); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s); }

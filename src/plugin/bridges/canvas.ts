@@ -7,7 +7,7 @@ import { extractDataFromSvg } from '../svgmeta';
 export function initCanvasBridge(plugin: ChemEditPlugin) {
     plugin.registerEvent(plugin.app.workspace.on('layout-change', () => injectCanvasUI(plugin)));
     plugin.registerEvent(plugin.app.workspace.on('active-leaf-change', () => injectCanvasUI(plugin)));
-    setTimeout(() => injectCanvasUI(plugin), 1000);
+    window.setTimeout(() => injectCanvasUI(plugin), 1000);
 }
 
 function injectCanvasUI(plugin: ChemEditPlugin) {
@@ -20,51 +20,13 @@ function injectCanvasUI(plugin: ChemEditPlugin) {
 
     let toolsContainer = container.querySelector('.chemedit-canvas-tools') as HTMLElement;
     if (!toolsContainer) {
-        toolsContainer = document.createElement('div');
-        toolsContainer.className = 'chemedit-canvas-tools';
-        
-        // POSITIONING: Top Left, perfectly clear of native Canvas tools
-        Object.assign(toolsContainer.style, {
-            position: 'absolute',
-            top: '70px',
-            left: '16px',
-            zIndex: '100',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            padding: '6px',
-            backgroundColor: 'var(--background-primary)',
-            borderRadius: '8px',
-            border: '1px solid var(--background-modifier-border)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        });
+        toolsContainer = createDiv({ cls: 'chemedit-canvas-tools ce-bridge-tools' });
         canvasUI.appendChild(toolsContainer);
 
         const createBtn = (iconName: string, title: string, isMain: boolean, onClick: () => void) => {
-            const btn = document.createElement('button');
+            const btn = createEl('button', { cls: isMain ? 'ce-bridge-btn is-main' : 'ce-bridge-btn' });
             btn.title = title;
             setIcon(btn, iconName);
-            
-            const size = isMain ? '38px' : '32px';
-            const iconColor = isMain ? 'var(--text-normal)' : 'var(--text-muted)';
-            const bgColor = isMain ? 'var(--background-modifier-active-hover)' : 'transparent';
-
-            Object.assign(btn.style, {
-                width: size, height: size, padding: '6px', borderRadius: '6px',
-                backgroundColor: bgColor, color: iconColor, border: '1px solid transparent',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s'
-            });
-
-            btn.onmouseover = () => { 
-                btn.style.color = "var(--text-normal)"; 
-                btn.style.backgroundColor = "var(--background-modifier-hover)"; 
-                btn.style.borderColor = "var(--background-modifier-border)";
-            };
-            btn.onmouseout = () => { 
-                btn.style.color = iconColor; 
-                btn.style.backgroundColor = bgColor; 
-                btn.style.borderColor = "transparent";
-            };
             btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(); };
             toolsContainer.appendChild(btn);
         };
@@ -81,7 +43,7 @@ function injectCanvasUI(plugin: ChemEditPlugin) {
             const canvas = (view as any).canvas;
             if (!canvas) return;
             
-            setTimeout(() => {
+            window.setTimeout(() => {
                 const selectedNodes = Array.from(canvas.selection);
                 if (selectedNodes.length === 1) {
                     const node = selectedNodes[0] as any;
@@ -117,11 +79,11 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
             const textVal = node.text.trim();
             new Notice("Resolving Structure from Web...");
             let smi = textVal;
-            if (!/^[A-Za-z0-9@+\-\[\]\(\)\\\/=#%]+$/.test(textVal) || !/[CNOcno]/.test(textVal)) {
+            if (!/^[A-Za-z0-9@+\-[\]()\\/=#%]+$/.test(textVal) || !/[CNOcno]/.test(textVal)) {
                 try {
                     const opsin = await requestUrl(`https://opsin.ch.cam.ac.uk/opsin/${encodeURIComponent(textVal)}.smi`);
                     if (opsin.status === 200) smi = opsin.text.trim();
-                } catch(e) {}
+                } catch { /* offline */ }
             }
             initialData = smi;
             nodeToUpdate = node;
@@ -132,8 +94,9 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
         }
     }
 
-    if (isEdit && nodeToUpdate && nodeToUpdate.file) {
-        tfile = nodeToUpdate.file as TFile;
+    const linked: unknown = nodeToUpdate?.file;
+    if (isEdit && linked instanceof TFile) {
+        tfile = linked;
         if (['svg', 'mol', 'cdxml'].includes(tfile.extension.toLowerCase())) {
             initialData = await plugin.app.vault.read(tfile);
             if (tfile.extension.toLowerCase() === 'svg') {
@@ -150,7 +113,7 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
     if (actionType === 'copy' || actionType === 'web' || actionType === 'props') {
         new Notice("Processing structure...", 1000);
         try { smilesData = await plugin.api.ketcher.convertFormat(initialData, 'smiles'); } 
-        catch (e) { new Notice("Failed to convert structure."); return; }
+        catch { new Notice("Failed to convert structure."); return; }
     }
 
     if (actionType === 'copy') { navigator.clipboard.writeText(smilesData); new Notice("SMILES Copied!"); return; }
@@ -163,7 +126,7 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
         try {
             const res = await requestUrl(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smilesData)}/property/IUPACName/JSON`);
             if (res.status === 200) iupac = res.json.PropertyTable.Properties[0].IUPACName;
-        } catch(e) {}
+        } catch { /* offline */ }
 
         if (props && props.mw > 0) {
             const text = `${iupac ? `**Name:** ${iupac}\n` : ''}**Formula:** ${props.formula}\n**MW:** ${props.mw.toFixed(2)}`;
@@ -210,7 +173,7 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
                 }
 
                 // FORCE OBSIDIAN CANVAS CACHE BUST
-                setTimeout(() => {
+                window.setTimeout(() => {
                     if (nodeToUpdate.nodeEl) {
                         const imgEls = nodeToUpdate.nodeEl.querySelectorAll('img');
                         imgEls.forEach((img: HTMLImageElement) => {
@@ -237,7 +200,7 @@ async function handleCanvasAction(plugin: ChemEditPlugin, view: any, actionType:
                 const fileToEmbed = await plugin.app.vault.create(filename, newData);
                 
                 // Wait for Obsidian to register the file
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => window.setTimeout(r, 200));
                 
                 if (nodeToUpdate && nodeToUpdate.text !== undefined) {
                     const posX = nodeToUpdate.x; const posY = nodeToUpdate.y;

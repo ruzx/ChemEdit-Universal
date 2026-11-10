@@ -108,3 +108,8 @@ interface HTMLElement {
   empty(): void; addClass(...c: string[]): void; removeClass(...c: string[]): void; toggleClass(c: string, v: boolean): void; setText(t: string): void; appendText(t: string): void; setAttr(k: string, v: string): void; setCssStyles(s: Partial<CSSStyleDeclaration>): void;
 }
 interface Window { moment: any }
+
+declare function createEl<K extends keyof HTMLElementTagNameMap>(tag: K, o?: string | { cls?: string | string[]; text?: string; attr?: Record<string, string | number | boolean | null>; type?: string; value?: string; placeholder?: string }, cb?: (el: HTMLElementTagNameMap[K]) => void): HTMLElementTagNameMap[K];
+declare function createDiv(o?: string | { cls?: string | string[]; text?: string; attr?: Record<string, string | number | boolean | null> }, cb?: (el: HTMLDivElement) => void): HTMLDivElement;
+declare function createSpan(o?: string | { cls?: string | string[]; text?: string; attr?: Record<string, string | number | boolean | null> }, cb?: (el: HTMLSpanElement) => void): HTMLSpanElement;
+

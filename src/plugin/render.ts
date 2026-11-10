@@ -4,6 +4,7 @@ import type ChemEditPlugin from "./main";
 import { ChemDoc, isEmpty } from "../chem/model";
 import { parseAny, docToSmiles, docToMolfile, docToNative, computeProperties, formatForExtension, serialize, Format } from "../chem/index";
 import { EditorResult } from "./modal";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 
 export type BlockLang = "smiles" | "mol" | "chemedit";
 export const BLOCK_LANGS: Record<string, BlockLang> = { smiles: "smiles", smi: "smiles", mol: "mol", molfile: "mol", chemedit: "chemedit" };
@@ -29,10 +30,10 @@ export class StructureView {
     const wrap = container.createDiv({ cls: opts.inline ? "chemedit-inline" : "chemedit-block" });
     const svg = this.plugin.svgFor(doc, opts.inline ? { maxHeight: opts.height ?? s.inlineHeight, padding: 2 } : {});
     const fig = wrap.createDiv({ cls: "chemedit-figure" });
-    fig.innerHTML = svg;
+    setSvg(fig, svg);
     if (!opts.inline && s.showFormula && doc.atoms.length) {
       const p = computeProperties(doc, doc.arrows.length ? "products" : "all");
-      if (p) { const cap = wrap.createDiv({ cls: "chemedit-caption" }); cap.innerHTML = `${p.formulaHtml} · ${p.mw.toFixed(2)} g/mol`; }
+      if (p) { const cap = wrap.createDiv({ cls: "chemedit-caption" }); setRich(cap, `${p.formulaHtml} · ${p.mw.toFixed(2)} g/mol`); }
     }
     if (opts.onEdit) {
       wrap.addEventListener("dblclick", (e) => { e.preventDefault(); e.stopPropagation(); opts.onEdit!(); });
@@ -151,7 +152,7 @@ export class StructureView {
       const t = code.textContent ?? "";
       if (!t.startsWith(prefix)) return;
       const smi = t.slice(prefix.length).trim();
-      const span = document.createElement("span");
+      const span = createSpan();
       code.replaceWith(span);
       this.inlineInto(span, smi, el, ctx);
     });
@@ -168,7 +169,7 @@ export class StructureView {
       let m: RegExpExecArray | null;
       while ((m = re.exec(text))) {
         frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-        const span = document.createElement("span");
+        const span = createSpan();
         frag.appendChild(span);
         this.inlineInto(span, m[1], el, ctx);
         last = m.index + m[0].length;

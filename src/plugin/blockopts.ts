@@ -58,3 +58,18 @@ export async function insertAfterBlock(app: App, el: HTMLElement, ctx: MarkdownP
   await app.vault.process(f, (txt) => { const L = txt.split("\n"); L.splice(info.lineEnd + 1, 0, "", text); return L.join("\n"); });
   return true;
 }
+
+/** Replace the whole body of the code block that produced `el` (keeps the fence lines). */
+export async function writeBlockBody(app: App, el: HTMLElement, ctx: MarkdownPostProcessorContext, body: string) {
+  const info = ctx.getSectionInfo(el);
+  const f = app.vault.getAbstractFileByPath(ctx.sourcePath);
+  if (!info || !(f instanceof TFile)) return false;
+  await app.vault.process(f, (txt) => {
+    const L = txt.split("\n");
+    const m = /^(\s*(?:>\s*)*)/.exec(L[info.lineStart] ?? "");
+    const prefix = m?.[1] ?? "";
+    L.splice(info.lineStart + 1, info.lineEnd - info.lineStart - 1, ...body.split("\n").map((l) => prefix + l));
+    return L.join("\n");
+  });
+  return true;
+}

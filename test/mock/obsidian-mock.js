@@ -12,6 +12,8 @@
   P.removeClass = function (...c) { this.classList.remove(...c); };
   P.toggleClass = function (c, v) { this.classList.toggle(c, v); };
   P.setText = function (t) { this.textContent = t; };
+  window.createEl = (tag, o, cb) => { const e = document.createElement(tag); apply(e, o); cb && cb(e); return e; };
+  window.createDiv = (o, cb) => window.createEl('div', o, cb); window.createSpan = (o, cb) => window.createEl('span', o, cb);
   class Events { constructor() { this._h = {}; } on(n, cb) { (this._h[n] ||= []).push(cb); return { n, cb }; } trigger(n, ...a) { (this._h[n] || []).forEach(f => f(...a)); } }
   class Component { constructor() { this._c = []; } load() {} onload() {} unload() { this._c.forEach(f => f()); } onunload() {} addChild(c) { return c; } register(cb) { this._c.push(cb); } registerEvent() {} registerDomEvent(el, t, cb, o) { el.addEventListener(t, cb, o); } registerInterval(i) { return i; } }
   class TAbstractFile {} class TFile extends TAbstractFile { constructor(path, data) { super(); this.path = path; this.name = path.split('/').pop(); this.basename = this.name.replace(/\.[^.]+$/, ''); this.extension = this.name.split('.').pop(); this.data = data; this.stat = { mtime: Date.now() }; } }

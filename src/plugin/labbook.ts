@@ -548,7 +548,7 @@ export class ConclusionModal extends BuilderModal {
 /** Pick/take a photo; returns a (downscaled) JPEG blob. */
 export function pickImage(capture: boolean): Promise<File | null> {
   return new Promise((res) => {
-    const inp = document.createElement("input");
+    const inp = createEl("input");
     inp.type = "file";
     inp.accept = "image/*";
     if (capture) inp.setAttribute("capture", "environment");
@@ -567,7 +567,7 @@ export async function loadImage(file: Blob): Promise<HTMLImageElement> {
 export async function compressImage(file: Blob, maxPx: number, quality = 0.85): Promise<Blob> {
   const img = await loadImage(file);
   const s = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight));
-  const c = document.createElement("canvas");
+  const c = createEl("canvas");
   c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
   c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
   return new Promise((ok, err) => c.toBlob((b) => (b ? ok(b) : err(new Error("encode failed"))), "image/jpeg", quality));

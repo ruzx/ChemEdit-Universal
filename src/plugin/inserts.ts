@@ -25,8 +25,7 @@ export class BlockPicker extends FuzzySuggestModal<BlockItem> {
   constructor(app: App, private plugin: ChemEditPlugin, private editor: Editor) { super(app); this.setPlaceholder("Insert a ChemEdit block…"); }
   getItems() { return BLOCK_ITEMS; }
   getItemText(i: BlockItem) { return i.name + " — " + i.desc; }
-  async onChooseItem(i: BlockItem) {
-    const t = await i.make(this.plugin);
-    if (t) this.editor.replaceSelection(t);
+  onChooseItem(i: BlockItem) {
+    void Promise.resolve(i.make(this.plugin)).then((t) => { if (t) this.editor.replaceSelection(t); });
   }
 }

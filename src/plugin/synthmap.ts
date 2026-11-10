@@ -1,13 +1,14 @@
 // Interactive synthesis map (Phoenix-ELN style): sequence overview + full structure graph,
 // pan / zoom / pinch, run lists per step, compound panel with "next step" action.
 
-import { MarkdownRenderChild, Menu, Notice, TFile, parseYaml, setIcon } from "obsidian";
+import { MarkdownRenderChild, Notice, TFile, parseYaml, setIcon } from "obsidian";
 import type ChemEditPlugin from "./main";
 import { parseElnYaml } from "./eln";
 import { calculateEln } from "../chem/eln";
 import { parseAny, docToSmiles } from "../chem/index";
 import { computeProperties } from "../chem/props";
 import { buildSynthesis, bestYieldLabel, bestRoute, layoutMap, ExpInput, SynthGraph, SStep, SNode, MapLayout, RouteComp } from "../chem/synthesis";
+import { setSvg, setSvgChildren, appendSvg as appendSvgStr } from "../render/dom";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const canonCache = new Map<string, string | null>();
@@ -235,7 +236,7 @@ export class SynthesisMap {
       const tn = this.g.nodes.get(c.target)!;
       const head = box.createDiv({ cls: "ce-rm-routeh" });
       const th = head.createDiv({ cls: "ce-rm-routethumb" });
-      if (tn.smiles) th.innerHTML = this.struct(tn.smiles, 44);
+      if (tn.smiles) setSvg(th, this.struct(tn.smiles, 44));
       const tx = head.createDiv({ cls: "ce-rm-routetx" });
       tx.createDiv({ cls: "ce-lab-strong ce-lab-ellipsis", text: `Route ${c.id} · ${this.label(tn)}` });
       tx.createDiv({ cls: "ce-lab-muted", text: `${c.steps.length} steps · LLS ${c.lls}${c.overall !== null ? ` · overall ${(c.overall * 100).toFixed(c.overall < 0.1 ? 1 : 0)}%` : ""}` });
@@ -320,7 +321,7 @@ export class SynthesisMap {
         svg.appendChild(p);
       }
     }
-    svg.insertAdjacentHTML("afterbegin", `<defs><marker id="ce-rm-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ce-rm-arrhead"/></marker></defs>`);
+    const defs = document.createElementNS(SVGNS, "g"); setSvgChildren(defs, `<defs><marker id="ce-rm-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ce-rm-arrhead"/></marker></defs>`); svg.insertBefore(defs.firstChild!, svg.firstChild);
     // compounds
     for (const [k, p] of this.lay.nodeXY) {
       const n = this.g.nodes.get(k)!;
@@ -333,8 +334,8 @@ export class SynthesisMap {
       if (!n.out.length) badges.createSpan({ cls: "ce-rm-badge is-target", text: "★ target" });
       if (this.stock.has(k)) badges.createSpan({ cls: "ce-rm-badge is-stock", text: "in stock" });
       const sv = c.createDiv({ cls: "ce-rm-cardstruct" });
-      if (n.smiles) sv.innerHTML = this.struct(n.smiles, 84);
-      if (!sv.innerHTML) sv.createDiv({ cls: "ce-rm-cardname is-big", text: n.name || "?" });
+      if (n.smiles) setSvg(sv, this.struct(n.smiles, 84));
+      if (!sv.childElementCount) sv.createDiv({ cls: "ce-rm-cardname is-big", text: n.name || "?" });
       c.createDiv({ cls: "ce-rm-cardname ce-lab-ellipsis", text: this.label(n) });
       c.onclick = (e) => { if (this.pz.moved) return; e.stopPropagation(); this.selNode = k; this.selStep = null; this.stage.querySelectorAll(".is-sel").forEach((x) => (x as HTMLElement).removeClass("is-sel")); c.addClass("is-sel"); this.drawSide(); };
     }
@@ -347,7 +348,7 @@ export class SynthesisMap {
       el.dataset.step = st.id;
       el.setCssStyles({ left: colX(p.x) + "px", top: rowY(p.y) + (CH - SHT) / 2 + "px", width: SWD + "px", height: SHT + "px" });
       const frac = y !== null ? Math.max(0, Math.min(1, y / 100)) : 0, R = 17, C = 2 * Math.PI * R;
-      el.insertAdjacentHTML("beforeend", `<svg class="ce-rm-ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="${R}" class="bg"/><circle cx="22" cy="22" r="${R}" class="fg" stroke-dasharray="${(frac * C).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 22 22)"/><text x="22" y="26" text-anchor="middle">${y !== null ? Math.round(y) : stt === "failed" ? "✕" : "–"}</text></svg>`);
+      appendSvgStr(el, `<svg xmlns="http://www.w3.org/2000/svg" class="ce-rm-ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="${R}" class="bg"/><circle cx="22" cy="22" r="${R}" class="fg" stroke-dasharray="${(frac * C).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 22 22)"/><text x="22" y="26" text-anchor="middle">${y !== null ? Math.round(y) : stt === "failed" ? "✕" : "–"}</text></svg>`);
       const tx = el.createDiv({ cls: "ce-rm-steptx" });
       tx.createDiv({ cls: "ce-rm-stepid", text: `${segLabel(st.seq)}${st.idx}` });
       tx.createDiv({ cls: "ce-rm-stepsub", text: st.runs.length > 1 ? `${st.runs.length} runs` : st.runs[0]?.code ?? "" });
@@ -376,9 +377,9 @@ export class SynthesisMap {
       const a = this.g.nodes.get(step.from)!, b = this.g.nodes.get(step.to)!;
       s.createDiv({ cls: "ce-rm-sideh", text: `Step ${segLabel(step.seq)}${step.idx}` });
       const mini = s.createDiv({ cls: "ce-rm-mini" });
-      mini.createDiv({ cls: "ce-rm-ministruct" }).innerHTML = a.smiles ? this.struct(a.smiles, 56) : a.name;
+      { const d = mini.createDiv({ cls: "ce-rm-ministruct" }); if (a.smiles) setSvg(d, this.struct(a.smiles, 56)); else d.setText(a.name); }
       setIcon(mini.createSpan({ cls: "ce-rm-miniarrow" }), "arrow-right");
-      mini.createDiv({ cls: "ce-rm-ministruct" }).innerHTML = b.smiles ? this.struct(b.smiles, 56) : b.name;
+      { const d = mini.createDiv({ cls: "ce-rm-ministruct" }); if (b.smiles) setSvg(d, this.struct(b.smiles, 56)); else d.setText(b.name); }
       const ys = step.runs.map((r) => r.yieldPct).filter((y): y is number => y !== null);
       const stats = s.createDiv({ cls: "ce-rm-stats" });
       const st = (v: string, l: string) => { const d = stats.createDiv(); d.createDiv({ cls: "ce-rm-statv", text: v }); d.createDiv({ cls: "ce-lab-muted", text: l }); };
@@ -405,7 +406,7 @@ export class SynthesisMap {
     const node = this.selNode ? this.g.nodes.get(this.selNode) : null;
     if (node) {
       s.createDiv({ cls: "ce-rm-sideh", text: this.label(node) });
-      if (node.smiles) s.createDiv({ cls: "ce-rm-sidestruct" }).innerHTML = this.struct(node.smiles, 120);
+      if (node.smiles) setSvg(s.createDiv({ cls: "ce-rm-sidestruct" }), this.struct(node.smiles, 120));
       const chips = s.createDiv({ cls: "ce-rm-badges is-static" });
       if (!node.in.length) chips.createSpan({ cls: "ce-rm-badge is-sm", text: "starting material" });
       if (!node.out.length) chips.createSpan({ cls: "ce-rm-badge is-target", text: "★ target" });
@@ -455,7 +456,8 @@ export class SynthesisMap {
 /** ```synthesis-map block: project:, focus: [[EXP]], view: structures|sequences, height: */
 export class SynthesisMapBlock extends MarkdownRenderChild {
   constructor(private plugin: ChemEditPlugin, el: HTMLElement, private source: string, private sourcePath: string) { super(el); }
-  async onload() {
+  onload() { void this.build(); }
+  private async build() {
     let o: any = {};
     try { o = parseYaml(this.source) ?? {}; } catch { /* */ }
     const focus = o.focus ? this.plugin.app.metadataCache.getFirstLinkpathDest(String(o.focus).replace(/^\[\[|\]\]$/g, ""), this.sourcePath)?.path : undefined;

@@ -3,6 +3,7 @@ import { TextFileView, WorkspaceLeaf, debounce, Notice } from "obsidian";
 import type ChemEditPlugin from "./main";
 import { ChemEditor } from "../editor/editor";
 import { parseAny, docToMolfile, docToNative, docToSmiles, formatForExtension, serialize, parseSdf, writeSdf, SdfRecord, Format } from "../chem/index";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 
 export const CHEM_VIEW_TYPE = "chemedit-file-view";
 
@@ -69,7 +70,7 @@ export class ChemFileView extends TextFileView {
     recs.forEach((r, i) => {
       const card = grid.createDiv({ cls: "ce-sdf-card" });
       const fig = card.createDiv({ cls: "ce-sdf-fig" });
-      try { fig.innerHTML = this.plugin.svgFor(r.doc, { maxHeight: 150 }); } catch { fig.setText("?"); }
+      try { setSvg(fig, this.plugin.svgFor(r.doc, { maxHeight: 150 })); } catch { fig.setText("?"); }
       card.createDiv({ cls: "ce-sdf-name", text: r.name });
       const fields = card.createDiv({ cls: "ce-sdf-fields" });
       for (const [k, v] of Object.entries(r.fields).slice(0, 6)) fields.createDiv({ text: `${k}: ${v}` });
@@ -78,7 +79,7 @@ export class ChemFileView extends TextFileView {
       card.addEventListener("contextmenu", async (e) => { e.preventDefault(); await navigator.clipboard.writeText(docToSmiles(r.doc)); new Notice("SMILES copied"); });
       cards.push({ el: card, text: (r.name + " " + Object.entries(r.fields).map(([k, v]) => k + " " + v).join(" ")).toLowerCase() });
     });
-    search.addEventListener("input", () => { const q = search.value.toLowerCase(); for (const c of cards) c.el.style.display = c.text.includes(q) ? "" : "none"; });
+    search.addEventListener("input", () => { const q = search.value.toLowerCase(); for (const c of cards) c.el.toggleClass("ce-hidden", !c.text.includes(q)); });
     add.onclick = () => this.plugin.openEditor(null, (res) => { recs.push({ doc: res.doc, name: `Record ${recs.length + 1}`, fields: {} }); this.requestSave(); this.renderSdf(this.getViewData()); }, { title: "New SDF record", saveLabel: "Add" });
   }
 

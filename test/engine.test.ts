@@ -2,7 +2,7 @@ import { parseAny, docToSmiles, docToMolfile, computeProperties, parseMolfile, i
 import { calculateEln } from "../src/chem/eln";
 import { analyse } from "../src/chem/analysis";
 import { predictNmr, acsText, SOLVENTS, spectrumSvg } from "../src/chem/nmr/spectrum";
-import { parsePlan, layoutPlan } from "../src/chem/plan";
+import { parsePlan, layoutPlan, serializePlan } from "../src/chem/plan";
 
 let fails = 0;
 const eq = (name: string, got: any, exp: any) => {
@@ -173,6 +173,15 @@ for (const [fmt, w] of [["rxn", writeRxn], ["cdxml", writeCdxml], ["ket", writeK
   eq("plan label", g.edges.find((e) => e.label)?.label, "PCC");
   const l = layoutPlan(g);
   eq("plan cycle → back edge", g.edges.filter((e) => e.back).length, 1);
+  // round trip: serialise → parse gives the same graph
+  g.pos.set("text:Node A", { x: 120, y: 80 });
+  const txt = serializePlan(g, { path: "ELN" });
+  const g2 = parsePlan(txt.split("\n").filter((l) => !/^path:/.test(l)), (t) => { try { return parseAny(t, "smiles").atoms.length > 0; } catch { return false; } });
+  eq("plan round-trip nodes", [...g2.nodes.keys()].sort(), [...g.nodes.keys()].sort());
+  eq("plan round-trip edges", g2.edges.map((e) => e.from + ">" + e.to + (e.label ?? "")).sort(), g.edges.map((e) => e.from + ">" + e.to + (e.label ?? "")).sort());
+  eq("plan round-trip pos", g2.pos.get("text:Node A"), { x: 120, y: 80 });
+  eq("plan quoted label", serializePlan(parsePlan(['"Idea: C–H arylation" ..> [[EXP-3]]']), {}), 'Idea: C–H arylation ..> [[EXP-3]]');
+  eq("plan dashed label", serializePlan(parsePlan(["A -[PCC]..> B"]), {}), "A -[PCC]..> B");
   eq("plan EXP-002 after EXP-001", l.pos.get("link:exp-002")!.layer > l.pos.get("link:exp-001")!.layer, true);
 }
 

@@ -25,6 +25,7 @@ import { TlcModal } from "./tlc";
 import { PhotoModal, StepModal, elnCtxForFile } from "./labbook";
 import { ElnRenderer, PromptModal, experimentTemplate, createExperimentFile, nextExperimentCode, elnFromDoc } from "./eln";
 import { ElnData } from "../chem/eln";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 
 export { embedDataInSvg, extractDataFromSvg, ChemFileView };
 
@@ -110,7 +111,7 @@ export default class ChemEditPlugin extends Plugin {
     if (this.settings.enableFileView) {
       this.registerView(CHEM_VIEW_TYPE, (leaf) => new ChemFileView(leaf, this));
       for (const ext of FILE_EXTS) {
-        try { this.registerExtensions([ext], CHEM_VIEW_TYPE); } catch (e) { console.warn(`ChemEdit: .${ext} already handled by another plugin`); }
+        try { this.registerExtensions([ext], CHEM_VIEW_TYPE); } catch { console.warn(`ChemEdit: .${ext} already handled by another plugin`); }
       }
       this.registerEmbeds();
     }
@@ -343,12 +344,11 @@ export default class ChemEditPlugin extends Plugin {
   async renderMoleculeToPreview(data: string, format: string, _isInline = false, width?: number, height?: number): Promise<HTMLElement | null> {
     try {
       const doc = parseAny(data, format === "mol" ? "mol" : format === "chemedit" ? "chemedit" : "auto");
-      const el = document.createElement("div");
-      el.className = "chemedit-preview";
-      el.innerHTML = renderSVG(doc, {
+      const el = createDiv({ cls: "chemedit-preview" });
+      setSvg(el, renderSVG(doc, {
         bondLength: this.settings.bondLength, colorAtoms: this.settings.colorAtoms, color: "currentColor",
         maxWidth: width ?? this.settings.maxWidth, maxHeight: height ?? this.settings.maxHeight, padding: 4,
-      });
+      }));
       return el;
     } catch { return null; }
   }

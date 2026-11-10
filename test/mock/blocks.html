@@ -62,6 +62,20 @@ add('Characterization/c1.md', { tags: ['characterization'], name: 'RS-021 produc
     const ctx = { sourcePath: 'x.md', getSectionInfo: () => ({ text, lineStart: 0, lineEnd: text.split('\n').length - 1 }), addChild: (c) => { c.onload(); } };
     p.processors[lang](src, d, ctx); return d; };
   window.__mk = mk;
+  // live block in a real note: re-render after each save, like Obsidian does
+  window.__live = (lang, body) => {
+    const path = 'Plan.md';
+    add(path, { x: 1 }, 'intro\n```' + lang + '\n' + body + '\n```\nend');
+    const host = note.createDiv({ cls: 'block-live' });
+    const draw = () => {
+      const f = files.get(path); const L = f.data.split('\n'); const ls = L.findIndex((l) => l.startsWith('```' + lang)); const le = L.indexOf('```', ls + 1);
+      host.innerHTML = ''; const d = host.createDiv();
+      const ctx = { sourcePath: path, getSectionInfo: () => ({ text: f.data, lineStart: ls, lineEnd: le }), addChild: (c) => c.onload() };
+      p.processors[lang](L.slice(ls + 1, le).join('\n'), d, ctx);
+    };
+    window.__app.vault.on('modify', (f) => { if (f.path === path) setTimeout(draw, 10); });
+    draw();
+  };
   window.__ready = true;
 })().catch(e => { window.__err = String(e.stack || e); });
 </script></body></html>

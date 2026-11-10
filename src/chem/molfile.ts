@@ -122,7 +122,7 @@ function parseV3000(lines: string[], doc: ChemDoc): ChemDoc {
   const joined: string[] = [];
   for (let k = 0; k < lines.length; k++) {
     let l = lines[k];
-    while (l.endsWith("-") && k + 1 < lines.length) { l = l.slice(0, -1) + lines[++k].replace(/^M  V30 /, ""); }
+    while (l.endsWith("-") && k + 1 < lines.length) { l = l.slice(0, -1) + lines[++k].replace(/^M {2}V30 /, ""); }
     joined.push(l);
   }
   for (const l of joined) {

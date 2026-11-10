@@ -327,10 +327,6 @@ function atomToken(a: Atom, h: number, chiral: string | null, g: Graph, arom = f
   const sym = arom ? a.el.toLowerCase() : a.el;
   if (arom && plain && AROM_OK.has(a.el)) {
     // OpenSMILES aromatic implicit-H rule: valence - bonds(aromatic = 1) - 1
-    let used = 0;
-    for (const { bond } of g.adj.get(a.id)!) used += bond.order;
-    const nArom = g.adj.get(a.id)!.length;
-    void nArom;
     const v = (VALENCES[a.el] ?? [0])[0];
     const implied = Math.max(0, v - aromaticBondCount(g, a.id) - 1);
     if (h === implied) return sym;
@@ -520,6 +516,6 @@ function componentSmiles(doc: ChemDoc, g: Graph, ctx: WCtx, comp: number[]): str
 export function isLikelySmiles(s: string): boolean {
   const t = s.trim();
   if (!t || /\s/.test(t) && !/^\S+\s+\|/.test(t)) return false;
-  if (!/^[A-Za-z0-9@+\-\[\]\(\)\\\/=#$%:.>*]+$/.test(t.split(/\s/)[0])) return false;
+  if (!/^[A-Za-z0-9@+\-[\]()\\/=#$%:.>*]+$/.test(t.split(/\s/)[0])) return false;
   try { parseSmiles(t); return true; } catch { return false; }
 }

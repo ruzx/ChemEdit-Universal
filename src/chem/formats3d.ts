@@ -127,7 +127,7 @@ export function writeXyz(doc: ChemDoc, title = "ChemEdit"): string {
 
 // ---------------------------------------------------------------- PDB (small molecules / ligands)
 
-export function isPdb(s: string) { return /^(HETATM|ATOM  |HEADER|COMPND)/m.test(s) && /^(HETATM|ATOM  )/m.test(s); }
+export function isPdb(s: string) { return /^(HETATM|ATOM {2}|HEADER|COMPND)/m.test(s) && /^(HETATM|ATOM {2})/m.test(s); }
 
 export function parsePdb(text: string, opts: { ligandsOnly?: boolean } = {}): ChemDoc {
   const atoms: A3[] = [];

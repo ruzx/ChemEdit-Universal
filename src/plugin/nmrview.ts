@@ -10,6 +10,7 @@ import { renderSVG } from "../render/svg";
 import { svgToPngBlob } from "../render/png";
 import { predictNmr, acsText, spectrumSvg, SOLVENTS, solventOf, carbonMHz, NmrPrediction, Nucleus, PredSignal, multipletRange, spectrumRange as spectrumSvgRange } from "../chem/nmr/spectrum";
 import { blockOptions, writeBlockOptions, insertAfterBlock } from "./blockopts";
+import { setSvg, setRich, setSvgChildren, serializeEl } from "../render/dom";
 
 const KEYS = ["smiles", "mol", "nucleus", "mhz", "solvent", "range", "name", "title"];
 const MHZ = [300, 400, 500, 600];
@@ -92,10 +93,10 @@ export class NmrBlock extends MarkdownRenderChild {
     // body: structure + spectrum
     const body = root.createDiv({ cls: "ce-nmr-body" });
     const st = body.createDiv({ cls: "ce-nmr-struct" });
-    st.innerHTML = this.structSvg();
+    setSvg(st, this.structSvg());
     const sp = body.createDiv({ cls: "ce-nmr-spec" });
     const sigs = this.sigs();
-    sp.innerHTML = spectrumSvg(sigs, { nucleus: this.tab, mhz: this.tab === "13C" ? carbonMHz(this.mhz) : this.mhz, solvent: this.solvent, range: this.range });
+    setSvg(sp, spectrumSvg(sigs, { nucleus: this.tab, mhz: this.tab === "13C" ? carbonMHz(this.mhz) : this.mhz, solvent: this.solvent, range: this.range }));
     this.zoom(sp, root);
 
     // table
@@ -125,7 +126,7 @@ export class NmrBlock extends MarkdownRenderChild {
     const cp = acts.createEl("button", { text: "Copy" });
     cp.onclick = async () => { await navigator.clipboard.writeText(this.text()); new Notice("NMR text copied"); };
     const ins = acts.createEl("button", { text: "Insert below" });
-    ins.onclick = async () => { const ok = await insertAfterBlock(this.plugin.app, this.containerEl, this.ctx, this.both ? `${this.text("1H")}\n${this.text("13C")}` : this.text()); if (!ok) new Notice("Could not locate the block — copied instead"), navigator.clipboard.writeText(this.text()); };
+    ins.onclick = async () => { const ok = await insertAfterBlock(this.plugin.app, this.containerEl, this.ctx, this.both ? `${this.text("1H")}\n${this.text("13C")}` : this.text()); if (!ok) { new Notice("Could not locate the block — copied instead"); await navigator.clipboard.writeText(this.text()); } };
     root.createDiv({ cls: "ce-nmr-note", text: "Increment-based estimate (≈ ±0.2 ppm ¹H, ±3–5 ppm ¹³C; first-order multiplets). Use for assignment and planning — always confirm experimentally." });
 
     this.wireHover(root);
@@ -173,15 +174,15 @@ export class NmrBlock extends MarkdownRenderChild {
     let x0: number | null = null;
     const box = sp.createDiv({ cls: "ce-nmr-brush" });
     const rel = (e: PointerEvent) => { const r = svg.getBoundingClientRect(); return (e.clientX - r.left) / r.width; };
-    svg.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; x0 = rel(e); box.style.display = "none"; });
+    svg.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; x0 = rel(e); box.setCssStyles({ display: "none" }); });
     svg.addEventListener("pointermove", (e) => {
       if (x0 === null) return;
       const x1 = rel(e); if (Math.abs(x1 - x0) < 0.01) return;
-      box.style.display = "block"; box.style.left = Math.min(x0, x1) * 100 + "%"; box.style.width = Math.abs(x1 - x0) * 100 + "%";
+      box.setCssStyles({ display: "block", left: Math.min(x0, x1) * 100 + "%", width: Math.abs(x1 - x0) * 100 + "%" });
     });
     svg.addEventListener("pointerup", (e) => {
       if (x0 === null) return;
-      const x1 = rel(e); const a = x0; x0 = null; box.style.display = "none";
+      const x1 = rel(e); const a = x0; x0 = null; box.setCssStyles({ display: "none" });
       if (Math.abs(x1 - a) < 0.02) return;
       const W = 760, L = 18, R = 18;
       const [lo, hi] = this.range ?? (spectrumSvgRange(this.sigs(), this.tab));
@@ -216,7 +217,7 @@ export class NmrBlock extends MarkdownRenderChild {
   private exportSvg(root: HTMLElement): string | null {
     const s = root.querySelector(".ce-nmr-spec svg"); if (!s) return null;
     const css = `.ce-nmr-line,.ce-nmr-stick{fill:none;stroke:#1f4fbf;stroke-width:1.2}.ce-nmr-axis{stroke:#333;stroke-width:1}.ce-nmr-tick,.ce-nmr-int,.ce-nmr-lab,.ce-nmr-solvt{font:10px Arial,sans-serif;fill:#222}.ce-nmr-lead{fill:none;stroke:#777;stroke-width:.6}.ce-nmr-solv{stroke:#aaa;stroke-dasharray:3 3}.ce-nmr-hit,.ce-nmr-sigpath{fill:none;stroke:none}`;
-    return s.outerHTML.replace(/^<svg([^>]*)>/, `<svg$1 width="1520" height="540"><style>${css}</style><rect width="100%" height="100%" fill="#fff"/>`).replace(/width="100%" preserveAspectRatio="xMidYMid meet"/, "");
+    return serializeEl(s).replace(/^<svg([^>]*)>/, `<svg$1 width="1520" height="540"><style>${css}</style><rect width="100%" height="100%" fill="#fff"/>`).replace(/width="100%" preserveAspectRatio="xMidYMid meet"/, "");
   }
 
   private persist(set: Record<string, string>) { writeBlockOptions(this.plugin.app, this.containerEl, this.ctx, set).catch(() => {}); }

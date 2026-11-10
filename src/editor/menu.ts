@@ -1,4 +1,5 @@
 // Lightweight context / dropdown menu with submenus, check marks and shortcuts.
+import { appendRich, setStyles } from "../render/dom";
 
 export type MenuEntry =
   | "-"
@@ -17,7 +18,7 @@ export class PopupMenu {
   show(items: MenuEntry[], x: number, y: number) {
     this.close();
     this.level(items, x, y, 0);
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.host.ownerDocument.addEventListener("pointerdown", this.onDocDown, true);
       this.host.ownerDocument.addEventListener("keydown", this.onKey, true);
     }, 0);
@@ -33,7 +34,10 @@ export class PopupMenu {
       if (it === "-") { const s = doc.createElement("div"); s.className = "ce-menu-sep"; m.appendChild(s); continue; }
       const row = doc.createElement("div");
       row.className = "ce-menu-item" + (it.disabled ? " ce-disabled" : "") + (it.danger ? " ce-danger" : "");
-      row.innerHTML = `<span class="ce-menu-check">${it.checked ? "✓" : ""}</span><span class="ce-menu-label">${it.html ?? escapeHtml(it.label)}</span><span class="ce-menu-sc">${it.submenu ? "▸" : it.shortcut ?? ""}</span>`;
+      const sp = (cls: string) => { const e = doc.createElement("span"); e.className = cls; row.appendChild(e); return e; };
+      sp("ce-menu-check").textContent = it.checked ? "✓" : "";
+      const lab = sp("ce-menu-label"); if (it.html) appendRich(lab, it.html); else lab.textContent = it.label;
+      sp("ce-menu-sc").textContent = it.submenu ? "▸" : it.shortcut ?? "";
       if (!it.disabled) {
         const openSub = () => {
           const r = row.getBoundingClientRect(), hr = this.host.getBoundingClientRect();
@@ -58,8 +62,7 @@ export class PopupMenu {
     let px = x, py = y;
     if (px + mw > hr.width - 4) px = parentItem ? x - mw - (parentItem.offsetWidth - 4) : hr.width - mw - 4;
     if (py + mh > hr.height - 4) py = Math.max(4, hr.height - mh - 4);
-    m.style.left = Math.max(4, px) + "px";
-    m.style.top = Math.max(4, py) + "px";
+    setStyles(m, { left: Math.max(4, px) + "px", top: Math.max(4, py) + "px" });
   }
 
   close() {
@@ -72,4 +75,3 @@ export class PopupMenu {
   }
 }
 
-function escapeHtml(s: string) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }

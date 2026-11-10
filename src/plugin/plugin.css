@@ -567,7 +567,7 @@
 .ce-nmr-title{display:flex;align-items:center;gap:6px;font-weight:650}
 .ce-nmr-ico{display:flex;color:var(--interactive-accent)}.ce-nmr-ico svg{width:17px;height:17px}
 .ce-nmr-tabs{display:flex;gap:2px;background:var(--background-secondary);border-radius:8px;padding:2px}
-.ce-nmr-tab{all:unset;cursor:pointer;padding:2px 12px;border-radius:6px;font-size:var(--font-ui-small);color:var(--text-muted)}
+.ce-nmr-tab{appearance:none;background:none;border:none;box-shadow:none;margin:0;height:auto;line-height:1.6;font:inherit;cursor:pointer;padding:2px 12px;border-radius:6px;font-size:var(--font-ui-small);color:var(--text-muted)}
 .ce-nmr-tab.is-on{background:var(--background-primary);color:var(--text-normal);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
 .ce-nmr-ctrls{display:flex;gap:6px;align-items:center;margin-left:auto}
 .ce-nmr-ctrls .dropdown{font-size:var(--font-ui-smaller);height:26px;padding:0 24px 0 8px}
@@ -654,3 +654,34 @@
 .ce-sp-ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ce-sp-yield{flex:none;font-weight:700;color:var(--color-green);background:rgba(var(--color-green-rgb),.12);border-radius:999px;padding:0 7px}
 .ce-nmr-lead,.ce-nmr-line,.ce-nmr-sigpath,.ce-nmr-stick,.ce-nmr-axis,.ce-nmr-tick,.ce-nmr-solv,.ce-nmr-solvt{pointer-events:none}
+
+/* ===================== v1.5.1 — classes replacing inline styles ===================== */
+.ce-hidden{display:none !important}
+.ce-full-width{width:100%}
+.ce-modal-row-end{margin-top:12px;justify-content:flex-end}
+.ce-bridge-tools{position:absolute;top:70px;left:16px;z-index:100;display:flex;flex-direction:column;gap:8px;padding:6px;background-color:var(--background-primary);border-radius:8px;border:1px solid var(--background-modifier-border);box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.chemedit-excalidraw-tools.ce-bridge-tools{top:80px}
+.ce-bridge-btn{width:32px;height:32px;padding:6px;border-radius:6px;background-color:transparent;color:var(--text-muted);border:1px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;box-shadow:none}
+.ce-bridge-btn.is-main{width:38px;height:38px;color:var(--text-normal);background-color:var(--background-modifier-active-hover)}
+.ce-bridge-btn:hover{color:var(--text-normal);background-color:var(--background-modifier-hover);border-color:var(--background-modifier-border)}
+
+/* ===================== v1.5.1 — synthesis-plan visual editor ===================== */
+.ce-sp-editbtn{display:flex;align-items:center;gap:5px;height:26px;padding:0 10px;font-size:var(--font-ui-small);margin-right:6px}
+.ce-sp-editbtn svg{width:14px;height:14px}
+.ce-sp-editbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--background-modifier-border);background:var(--background-primary)}
+.ce-sp-tool{display:flex;align-items:center;gap:5px;height:26px;padding:0 9px;font-size:var(--font-ui-smaller)}
+.ce-sp-tool svg{width:14px;height:14px}
+.ce-sp-actions{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;padding-left:10px;border-left:1px solid var(--background-modifier-border)}
+.ce-sp-muted{font-size:var(--font-ui-smaller);color:var(--text-faint);align-self:center}
+.ce-sp-hint{padding:4px 12px;font-size:var(--font-ui-smaller);color:var(--text-muted);background:var(--background-secondary)}
+.ce-sp.is-editing .ce-sp-vp{outline:2px dashed rgba(var(--interactive-accent-rgb),.35);outline-offset:-2px}
+.ce-sp.is-editing .ce-sp-node{cursor:grab;touch-action:none}
+.ce-sp.is-editing .ce-sp-node:active{cursor:grabbing}
+.ce-sp-node.is-sel{border-color:var(--interactive-accent);box-shadow:0 0 0 3px rgba(var(--interactive-accent-rgb),.3)}
+.ce-sp-handle{position:absolute;right:-8px;top:50%;width:16px;height:16px;margin-top:-8px;border-radius:50%;background:var(--interactive-accent);border:2px solid var(--background-primary);cursor:crosshair;box-shadow:0 1px 3px rgba(0,0,0,.25);z-index:2;touch-action:none}
+.ce-sp-node{overflow:visible}
+.ce-sp-node>.ce-sp-struct,.ce-sp-node>.ce-sp-cardh,.ce-sp-node>.ce-sp-cardf{overflow:hidden}
+.ce-sp-ehit{fill:none;stroke:transparent;stroke-width:14;pointer-events:stroke;cursor:pointer}
+.ce-sp-edge.is-sel{stroke:var(--interactive-accent);stroke-width:3;opacity:1}
+.ce-sp-rubber{fill:none;stroke:var(--interactive-accent);stroke-width:2;stroke-dasharray:5 4}
+.ce-sp-tool.mod-warning{color:var(--text-error)}

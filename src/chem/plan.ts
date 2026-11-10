@@ -4,9 +4,9 @@
 export type PlanKind = "link" | "smiles" | "text";
 export interface PlanNode { id: string; kind: PlanKind; text: string; alias?: string; order: number }
 export interface PlanEdge { from: string; to: string; label?: string; back?: boolean; dashed?: boolean }
-export interface PlanGraph { nodes: Map<string, PlanNode>; edges: PlanEdge[]; errors: string[] }
+export interface PlanGraph { nodes: Map<string, PlanNode>; edges: PlanEdge[]; errors: string[]; pos: Map<string, { x: number; y: number }>; comments: string[] }
 
-const ARROW = /\s*(?:-\[([^\]]*)\]->|-->|->|→|=>|\.\.>)\s*/g;
+const ARROW = /\s*(?:-\[([^\]]*)\](?:->|\.\.>)|-->|->|→|=>|\.\.>)\s*/g;
 const SMILES_CHARS = /^[A-Za-z0-9@+\-[\]()=#$%./\\:*]+$/;
 
 /** Heuristic SMILES test (a real parse is done by the caller via `isSmiles`). */
@@ -20,7 +20,9 @@ export function parsePlan(lines: string[], isSmiles: (t: string) => boolean = sm
   const edges: PlanEdge[] = [];
   const errors: string[] = [];
   const seen = new Set<string>();
-  const node = (raw: string): string | null => {
+  const pos = new Map<string, { x: number; y: number }>();
+  const comments: string[] = [];
+  const node = (raw: string, add = true): string | null => {
     let t = raw.trim();
     if (!t) return null;
     let kind: PlanKind = "text", text = t, alias: string | undefined;
@@ -30,19 +32,23 @@ export function parsePlan(lines: string[], isSmiles: (t: string) => boolean = sm
     else if (/^smiles:/i.test(t)) { kind = "smiles"; text = t.replace(/^smiles:\s*/i, ""); }
     else if (smilesLike(t) && isSmiles(t)) kind = "smiles";
     const id = kind + ":" + (kind === "link" ? text.toLowerCase() : text);
+    if (!add) return id;
     if (!nodes.has(id)) nodes.set(id, { id, kind, text, alias, order: nodes.size });
     else if (alias && !nodes.get(id)!.alias) nodes.get(id)!.alias = alias;
     return id;
   };
   for (const raw of lines) {
+    const pm = /^%%\s*@(.+?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$/.exec(raw.trim());
+    if (pm) { const id = node(pm[1], false); if (id) pos.set(id, { x: +pm[2], y: +pm[3] }); continue; }
+    if (/^\s*(#|\/\/)/.test(raw)) { comments.push(raw.trim()); continue; }
     const line = raw.replace(/\s+%%.*$/, "").trim();
-    if (!line || /^(#|\/\/|%%)/.test(line)) continue;
+    if (!line || /^%%/.test(line)) continue;
     const parts: string[] = []; const labels: Array<{ label?: string; dashed: boolean }> = [];
     let last = 0; let m: RegExpExecArray | null;
     ARROW.lastIndex = 0;
     while ((m = ARROW.exec(line))) { parts.push(line.slice(last, m.index)); labels.push({ label: m[1]?.trim() || undefined, dashed: m[0].includes("..>") || m[0].includes("-->") }); last = m.index + m[0].length; }
     parts.push(line.slice(last));
-    const ids = parts.map(node);
+    const ids = parts.map((p) => node(p));
     if (ids.length === 1) { if (!ids[0]) errors.push(`Cannot read “${line}”`); continue; }
     for (let i = 0; i + 1 < ids.length; i++) {
       const a = ids[i], b = ids[i + 1];
@@ -53,7 +59,47 @@ export function parsePlan(lines: string[], isSmiles: (t: string) => boolean = sm
       edges.push({ from: a, to: b, label: labels[i].label, dashed: labels[i].dashed });
     }
   }
-  return { nodes, edges, errors };
+  for (const k of [...pos.keys()]) if (!nodes.has(k)) pos.delete(k);
+  return { nodes, edges, errors, pos, comments };
+}
+
+const OPT_KEYS = /^(path|folder|title|height|direction)\s*:/i;
+/** The text token that parses back to this node. */
+export function nodeToken(n: { kind: PlanKind; text: string; alias?: string }): string {
+  if (n.kind === "link") return `[[${n.text}${n.alias ? "|" + n.alias : ""}]]`;
+  if (n.kind === "smiles") return smilesLike(n.text) ? n.text : "smiles:" + n.text;
+  const t = n.text.replace(/"/g, "'");
+  return /->|→|=>|\.\.>|-\[|^\[\[|^%%|^#|^\/\//.test(t) || OPT_KEYS.test(t) || smilesLike(t) || /^smiles:/i.test(t) ? `"${t}"` : t;
+}
+
+/** Serialise a plan back to block text: options, comments, route chains, lone nodes, then manual positions. */
+export function serializePlan(g: PlanGraph, opts: Record<string, string>): string {
+  const out: string[] = [];
+  for (const k of ["path", "title", "height"]) if (opts[k]) out.push(`${k}: ${opts[k]}`);
+  out.push(...g.comments);
+  const tok = (id: string) => nodeToken(g.nodes.get(id)!);
+  const arrow = (e: PlanEdge) => (e.label ? ` -[${e.label.replace(/[\]\n]/g, " ")}]${e.dashed ? "..>" : "->"} ` : e.dashed ? " ..> " : " -> ");
+  const outs = new Map<string, PlanEdge[]>(), ins = new Map<string, number>();
+  for (const e of g.edges) { (outs.get(e.from) ?? outs.set(e.from, []).get(e.from)!).push(e); ins.set(e.to, (ins.get(e.to) ?? 0) + 1); }
+  const used = new Set<PlanEdge>();
+  // start chains at nodes that are not a simple pass-through
+  const order = [...g.nodes.keys()].sort((a, b) => (ins.get(a) ? 1 : 0) - (ins.get(b) ? 1 : 0) || g.nodes.get(a)!.order - g.nodes.get(b)!.order);
+  for (const start of order) for (const e0 of outs.get(start) ?? []) {
+    if (used.has(e0)) continue;
+    let line = tok(start), e: PlanEdge | undefined = e0;
+    while (e && !used.has(e)) {
+      used.add(e);
+      line += arrow(e) + tok(e.to);
+      const nx: PlanEdge[] = (outs.get(e.to) ?? []).filter((x) => !used.has(x));
+      e = ins.get(e.to) === 1 && nx.length === 1 ? nx[0] : undefined;
+    }
+    out.push(line);
+  }
+  for (const e of g.edges) if (!used.has(e)) out.push(tok(e.from) + arrow(e) + tok(e.to));
+  const linked = new Set(g.edges.flatMap((e) => [e.from, e.to]));
+  for (const id of g.nodes.keys()) if (!linked.has(id)) out.push(tok(id));
+  for (const [id, p] of g.pos) if (g.nodes.has(id)) out.push(`%% @${tok(id)} ${Math.round(p.x)} ${Math.round(p.y)}`);
+  return out.join("\n");
 }
 
 export interface PlanLayout { pos: Map<string, { layer: number; row: number; comp: number }>; layers: number; comps: Array<{ ids: string[]; rows: number; layers: number }> }
