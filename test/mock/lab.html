@@ -1,0 +1,66 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>
+:root{--background-primary:#fff;--background-secondary:#f6f6f8;--background-modifier-border:#e3e3e8;--background-modifier-hover:#eef0f6;--text-normal:#1d1d22;--text-muted:#6b6b76;--text-faint:#a5a5ae;--text-accent:#5b5bd6;--interactive-accent:#5b5bd6;--text-on-accent:#fff;--color-green:#2e9e4f;--color-orange:#d97a00;--color-red:#d23b2f;--color-blue:#3d6fe0;--color-purple:#8a5cf5;--color-cyan:#0fa3b1;--color-green-rgb:46,158,79;--color-orange-rgb:217,122,0;--color-red-rgb:210,59,47;--radius-s:4px;--radius-m:6px;--radius-l:10px;--font-ui-smaller:11px;--font-ui-small:13px;--font-interface:Inter,system-ui,sans-serif;--font-monospace:monospace}
+body{margin:0;font-family:var(--font-interface);color:var(--text-normal);background:#fff;font-size:14px}
+button{font:inherit;border:1px solid var(--background-modifier-border);background:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}button.mod-cta{background:#5b5bd6;color:#fff;border:0}
+input,select{font:inherit;border:1px solid var(--background-modifier-border);border-radius:6px;padding:4px 8px}
+.workspace-leaf-content{height:100vh}.clickable-icon{border:none;background:transparent}
+.ico{display:inline-block;width:16px;height:16px;border-radius:4px;border:1.6px solid currentColor;box-sizing:border-box;opacity:.8}
+</style></head>
+<body><div id="host" class="workspace-leaf-content"></div><div id="note" style="max-width:760px;padding:20px"></div>
+<script src="obsidian-mock.js"></script>
+<script>
+const OB = window.__obsidian;
+OB.setIcon = (el, i) => { el.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/></svg>'; };
+OB.FuzzySuggestModal = class extends OB.Modal { setPlaceholder() {} };
+HTMLElement.prototype.setCssStyles = function (s) { Object.assign(this.style, s); };
+HTMLElement.prototype.appendText = function (t) { this.append(t); };
+const files = window.__app.vault._files;
+window.__app.vault.getFiles = () => [...files.values()].filter(f => f instanceof OB.TFile);
+window.__app.metadataCache.getFileCache = (f) => f.fm ? { frontmatter: f.fm, sections: [{ type: 'code' }] } : null;
+window.__app.workspace.getLeavesOfType = () => []; window.__app.workspace.revealLeaf = () => {};
+window.__app.fileManager.processFrontMatter = async (f, fn) => { fn(f.fm); };
+const add = (p, fm, data = '') => { const f = new OB.TFile(p, data); f.fm = fm; files.set(p, f); };
+let n = 0;
+const ex = (from, to, y, mass, extra = {}) => { const code = 'RS-0' + (++n + 30); add(`ELN/${code}.md`, { tags: ['experiment'] }, "```eln\n" + JSON.stringify(Object.assign({ code, status: y === null ? 'Failed' : 'Completed', date: '2026-10-' + (10 + n), project: 'Amines', reactants: [{ name: 'sm', smiles: from, mmol: 1, eq: 1 }], products: [{ name: '', smiles: to, mass_isolated: mass, yield: y }] }, extra)) + "\n```"); };
+ex("Brc1ccccc1", "OCc1ccccc1", 65, 70); ex("OCc1ccccc1", "CC(O)c1ccccc1", 89, 120);
+ex("CC(O)c1ccccc1", "CC(OS(C)(=O)=O)c1ccccc1", 61, 200); ex("CC(O)c1ccccc1", "CC(OS(C)(=O)=O)c1ccccc1", 40, 90);
+ex("CC(OS(C)(=O)=O)c1ccccc1", "CC(N(C)C)c1ccccc1", 67, 100);
+ex("CC(O)c1ccccc1", "CC(OS(=O)(=O)c1ccc(C)cc1)c1ccccc1", 100, 300); ex("CC(OS(=O)(=O)c1ccc(C)cc1)c1ccccc1", "CN(C)C(C)c1ccccc1", 93, 12000); ex("CC(OS(=O)(=O)c1ccc(C)cc1)c1ccccc1", "CN(C)C(C)c1ccccc1", 85.6, 5000);
+ex("CC(O)c1ccccc1", "C=CCOC(C)c1ccccc1", null, null); ex("C=CCOC(C)c1ccccc1", "CC(OCC1CO1)c1ccccc1", 86, 50);
+ex("CN(C)C(C)c1ccccc1", "CN(C)C(C)c1ccc(Br)cc1", 92, 300); ex("CN(C)C(C)c1ccc(Br)cc1", "CN(C)C(C)c1ccc(O)cc1", 97, 150);
+ex("Ic1ccccc1", "CC(C)=CCCC(C)(O)/C=C/c1ccccc1", null, null, { project: 'Heck' }); ex("C=CC(C)(O)CCC=C(C)C", "CC(C)=CCCC(C)(O)/C=C/c1ccccc1", 55, 80, { project: 'Heck' }); ex("C=CC(C)(O)CCC=C(C)C", "CCCCCCCCCC/C=C/C(C)(O)CCC=C(C)C", null, null, { project: 'Heck' });
+ex("CC1=CC(=O)CCC1", "CC1=CC(OCc2ccccc2)CCC1", 71, 60, { project: 'Misc' });
+add('Inventory/THF.md', { tags: ['inventory'], name: 'THF (anhydrous)', smiles: 'C1CCOC1', cas: '109-99-9', supplier: 'Sigma', location: 'Solvent cabinet', amount: '1 L', status: 'Available' });
+add('Inventory/nBuLi.md', { tags: ['inventory'], name: 'n-BuLi 2.5 M', smiles: 'CCCC[Li]', cas: '109-72-8', supplier: 'Acros', location: 'Fridge 2', amount: '100 mL', status: 'Low' });
+add('Inventory/Pd.md', { tags: ['inventory'], name: 'Pd(PPh3)4', cas: '14221-01-3', supplier: 'Strem', location: 'Glovebox', amount: '1 g', status: 'Checked out', checked_out_by: 'Ruzal', expiry: '2026-11-20' });
+add('Library/aspirin.md', { tags: ['library'], name: 'Aspirin', smiles: 'CC(=O)Oc1ccccc1C(=O)O', cas: '50-78-2' });
+add('Library/caffeine.md', { tags: ['library'], name: 'Caffeine', smiles: 'Cn1cnc2c1c(=O)n(C)c(=O)n2C' });
+add('Library/ibu.md', { tags: ['library'], name: 'Ibuprofen', smiles: 'CC(C)Cc1ccc(C(C)C(=O)O)cc1', code: 'REF-3' });
+add('Orders/o1.md', { tags: ['order'], name: 'Celite 545', type: 'Consumable', supplier: 'Merck', status: 'Ordered', order_date: '2026-10-01', price: '€45' });
+add('Equipment/rotavap.md', { tags: ['equipment'], name: 'Rotavap R-300', location: 'Lab 2.14', status: 'In use', booked_by: 'Ruzal', next_maintenance: '2026-11-12' });
+add('Protocols/sop.md', { tags: ['protocol'], name: 'Quenching organolithiums', author: 'RS', version: '1.2', status: 'Approved', category: 'Safety', last_reviewed: '2025-06-01' });
+add('Characterization/c1.md', { tags: ['characterization'], name: 'RS-021 product', smiles: 'CC(=O)c1ccc(-c2ccccc2)cc1', hnmr: true, cnmr: true, hrms: '[[RS-021 HRMS.pdf]]', ir: false, mp: false });
+</script>
+<script>window.__HTE = null;</script>
+<script>var module = { exports: {} }; var exports = module.exports; function require(n) { if (n === 'obsidian') return window.__obsidian; throw new Error('no module ' + n); }</script>
+<script src="../../main.js"></script>
+<script>
+(async () => {
+  const views = {}; OB.Plugin.prototype.registerView = function (t, fn) { views[t] = fn; };
+  const P = module.exports.default; const p = new P(window.__app, { id: 'chemedit-universal' }); await p.onload();
+  window.__plugin = p;
+  const v = views['chemedit-lab']({}); v.app = window.__app; v.registerEvent = () => {}; window.__lab = v;
+  v.containerEl.className = ''; v.contentEl.className = 'view-content';
+  document.getElementById('host').appendChild(v.contentEl);
+  await v.onOpen();
+  const note = document.getElementById('note');
+  const ctx = { sourcePath: 'x.md', getSectionInfo: () => null };
+  for (const src of [{ type: 'nmr_yield', standard_name: '1,3,5-trimethoxybenzene', standard_mw: 168.19, standard_mass_mg: 16.8, standard_purity: 99, standard_protons: 3, standard_integral: 1, product_mw: 250, product_protons: 1, product_integral: 1.3, theory_mmol: 0.5 },
+    { type: 'calibration', units: 'µg/mL', standards: [{ name: 'S1', conc: 5, area: 1020 }, { name: 'S2', conc: 10, area: 2050 }, { name: 'S3', conc: 25, area: 5110 }, { name: 'S4', conc: 50, area: 10190, exclude: false }], samples: [{ name: 'crude', dilution_factor: 10, area: 3300 }] },
+    window.__HTE]) {
+    const d = note.createDiv(); p.processors['chem-calc'](JSON.stringify(src), d, ctx);
+  }
+  window.__ready = true;
+})().catch(e => { window.__err = String(e.stack || e); });
+</script></body></html>
